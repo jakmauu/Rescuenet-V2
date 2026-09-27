@@ -20,7 +20,7 @@ Open `http://localhost:4173` on the development computer. This is only a UI/API-
 
 ## Hosting and iPhone installation
 
-Publish the `pwa/` directory as a static site over HTTPS (for example, GitHub Pages using the repository's Actions deployment workflow). Open that HTTPS URL in iPhone Safari while the iPhone has internet, use Share → Add to Home Screen, then open RescueNet from its Home Screen before connecting to the Field Node. The service worker caches only the app shell; it never caches `/api/status` or SOS requests. Later the installed app can reopen its cached shell with no internet.
+This repository is public and contains no runtime secrets. The simplest no-cost publish is GitHub Pages directly from the existing `main` branch—no workflow or new repository is needed. In repository **Settings → Pages → Build and deployment**, choose **Deploy from a branch**, branch **main**, folder **/(root)**, then **Save**. The app URL will be `https://jakmauu.github.io/Rescuenet-V2/Rescuenet-apk/pwa/`. Wait for GitHub Pages to finish publishing before opening it. The service worker caches only the app shell; it never caches `/api/status` or SOS requests. Later the installed app can reopen its cached shell with no internet.
 
 ## Important integration limit — do not flash this as “ready” yet
 
