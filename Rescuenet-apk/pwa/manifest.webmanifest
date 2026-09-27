@@ -1,0 +1,13 @@
+{
+  "id": "./",
+  "name": "RescueNet Bantuan Darurat",
+  "short_name": "RescueNet",
+  "description": "Kirim SOS ke Field Node RescueNet melalui Wi-Fi lokal.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f9fc",
+  "theme_color": "#ffffff",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

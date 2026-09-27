@@ -2,6 +2,8 @@
 
 Aplikasi React Native + TypeScript strict, Expo SDK 55, Android/iOS. Source ini berada hanya di `Rescuenet-apk`. Firmware Field Node, Gateway, dan backend tidak diubah.
 
+**PWA iPhone (prototipe):** lihat [`pwa/README.md`](pwa/README.md), jalankan `npm.cmd run pwa:test` dan `npm.cmd run pwa:serve`. PWA mengikuti protokol Android/Field Node tetapi belum dianggap siap untuk iPhone fisik: HTTPS-to-HTTP LAN, CORS/OPTIONS, dan dukungan WebKit masih harus divalidasi pada domain serta perangkat target.
+
 **Batas saat ini:** aplikasi sudah memiliki profil, GPS HP, tracking, SOS dan antrean persisten. Firmware yang ada **belum memiliki API mobile**. Karena itu belum ada alur GPS HP → LoRa → dashboard. Jangan menganggap `DELIVERED` sebagai konfirmasi petugas: artinya hanya ACK penerimaan dari Field Node sesuai kontrak Fase 2.
 
 ## Mulai dari sini: APK tanpa Android Studio

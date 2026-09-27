@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="RescueNet" />
+    <meta name="description" content="Kirim SOS dan lokasi ke Field Node RescueNet melalui Wi-Fi lokal." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>RescueNet — Bantuan Darurat</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="brand-row">
+        <div class="brand-mark" aria-hidden="true">⌁</div>
+        <div class="brand-copy"><strong>RescueNet</strong><span>FIELD ASSISTANCE</span></div>
+        <span id="connection-pill" class="status-pill status-offline" role="status">Belum terhubung</span>
+      </header>
+
+      <section class="intro" aria-labelledby="main-title">
+        <div class="eyebrow">BANTUAN DARURAT</div>
+        <h1 id="main-title">Butuh bantuan?</h1>
+        <p>Kirim lokasi dan permintaan bantuan ke tim penyelamat.</p>
+      </section>
+
+      <section id="connection-panel" class="connection-card" aria-live="polite">
+        <div class="connection-copy">
+          <strong id="connection-title">Field Node belum diverifikasi</strong>
+          <p id="connection-help">Hubungkan iPhone ke Wi-Fi Field Node melalui Pengaturan Wi-Fi, lalu kembali ke RescueNet.</p>
+        </div>
+        <button id="check-button" class="button button-secondary" type="button">Periksa koneksi</button>
+      </section>
+
+      <button id="sos-button" class="button button-sos" type="button" disabled>
+        <span class="sos-icon" aria-hidden="true">⌁</span>
+        <span id="sos-button-label">KIRIM SOS</span>
+      </button>
+      <p class="sos-caption">SOS hanya aktif setelah komunikasi API Field Node terverifikasi.</p>
+
+      <section class="info-card location-card" aria-labelledby="location-heading">
+        <div class="card-icon location-icon" aria-hidden="true">●</div>
+        <div class="card-body">
+          <h2 id="location-heading">Lokasi saya</h2>
+          <p id="permission-status" class="card-status">Izin lokasi: belum diminta</p>
+          <p id="gps-status" class="secondary-text">GPS belum diperiksa</p>
+          <div id="coordinates" class="coordinates">Koordinat belum tersedia</div>
+          <button id="location-button" class="text-button" type="button">Izinkan / perbarui lokasi</button>
+        </div>
+      </section>
+
+      <section class="info-card report-card" aria-labelledby="report-heading" aria-live="polite">
+        <div class="card-icon radio-icon" aria-hidden="true">⌁</div>
+        <div class="card-body">
+          <h2 id="report-heading">Status laporan</h2>
+          <p id="report-status" class="secondary-text">Belum ada SOS aktif</p>
+          <p id="report-detail" class="fine-print">Penerimaan di Field Node belum berarti bantuan sudah tiba.</p>
+          <button id="retry-button" class="text-button hidden" type="button">Coba kirim lagi</button>
+        </div>
+      </section>
+
+      <details class="identity-card">
+        <summary>Identitas pelapor</summary>
+        <label for="name-input">Nama lengkap</label>
+        <input id="name-input" autocomplete="name" maxlength="60" placeholder="Nama Anda" />
+        <button id="save-name-button" class="button button-secondary" type="button">Simpan nama</button>
+        <p class="fine-print">Nama dan ID acak disimpan di perangkat ini untuk format laporan Field Node.</p>
+      </details>
+
+      <footer>Berfungsi melalui jaringan lokal. Tidak memerlukan internet saat mengirim SOS.<br />Tetap gunakan jalur bantuan lain jika tersedia.</footer>
+    </main>
+    <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>

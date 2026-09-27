@@ -10,6 +10,8 @@
     "export:android": "expo export --platform android",
     "export:ios": "expo export --platform ios",
     "doctor": "npx expo-doctor",
+    "pwa:test": "node --test pwa/tests/*.test.mjs",
+    "pwa:serve": "node pwa/server.mjs",
     "build:apk": "node scripts/eas.cjs build -p android --profile preview",
     "eas": "node scripts/eas.cjs"
   },
