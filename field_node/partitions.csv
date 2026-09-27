@@ -1,0 +1,11 @@
+# RescueNet Field Node 4 MB layout, reviewed against physical COM17 backup.
+# 2C: both OTA slots grow to 0x1a0000 for LoRaMesher. App0 stays at 0x10000.
+# The previously erased/unused SPIFFS area shrinks; rn_sos never moves.
+# Name, Type, SubType, Offset, Size, Flags
+nvs, data, nvs, 0x9000, 0x5000,
+otadata, data, ota, 0xe000, 0x2000,
+app0, app, ota_0, 0x10000, 0x1a0000,
+app1, app, ota_1, 0x1b0000, 0x1a0000,
+spiffs, data, spiffs, 0x350000, 0x98000,
+rn_sos, data, nvs, 0x3e8000, 0x8000,
+coredump, data, coredump, 0x3f0000, 0x10000,

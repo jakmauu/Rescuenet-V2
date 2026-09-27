@@ -1,0 +1,52 @@
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+credentials.json
+*.jks
+*.keystore
+
+# Python runtime, cache, and local data
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.db-shm
+*.db-wal
+
+# Arduino / ESP32 build outputs and temporary tools
+.build*/
+.tools/
+build/
+*.elf
+*.o
+*.map
+*.hex
+*.merged.bin
+*.partitions.bin
+*.bootloader.bin
+*.ino.bin
+*.bin
+
+# JavaScript / Expo generated files
+node_modules/
+.expo/
+.eas-inspect/
+dist/
+dist-ios/
+android/
+ios/
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+*.log
+
+# Local map preview screenshot, not a runtime asset
+Resquenet-server/dashboard-map-preview.png

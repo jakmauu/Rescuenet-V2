@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+dist/
+dist-ios/
+.eas-inspect/
+android/
+ios/
+*.log
+.env
+*.jks
+*.keystore
+credentials.json

@@ -1,0 +1,10 @@
+[
+  {"request_id":"SOS-0001","user_id":"USR-A81F","name":"Riko","sos":true,"has_gps":false,"event_timestamp":1789551200},
+  {"request_id":"SOS-0001","user_id":"USR-A81F","name":"  Riko  ","sos":true,"has_gps":false,"timestamp":1789551200},
+  {"request_id":"00000000-0000-4000-8000-000000000001","user_id":"USR-00000000-0000-4000-8000-000000000002","name":"Riko Dharmawan","has_gps":true,"lat":-6.364821,"lon":106.828913,"accuracy":6.8,"fix_timestamp":1789551200},
+  {"request_id":"00000000-0000-4000-8000-000000000001","user_id":"USR-00000000-0000-4000-8000-000000000002","name":"Riko Dharmawan","has_gps":true,"lat":-6.364821,"lon":106.828913,"accuracy":6.8,"timestamp":1789551200},
+  {"request_id":"UNICODE-1","user_id":"USR-1","name":"Éka 東京 😀","sos":true,"has_gps":true,"lat":-0.0,"lon":0,"accuracy":null,"gps_timestamp":1789551200,"timestamp":1789551230},
+  {"request_id":"UNICODE-1","user_id":"USR-1","name":" Éka\t 東京\u00a0😀 ","sos":true,"has_gps":true,"lat":0,"lon":0,"accuracy":null,"fix_timestamp":1789551200,"event_timestamp":1789551230},
+  {"request_id":"BOUNDARY","user_id":"USR-1","name":"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz12345678","has_gps":true,"lat":-90,"lon":180,"accuracy":6553.4,"fix_timestamp":4294967295},
+  {"request_id":"PRECISION","user_id":"USR-1","name":"Riko","has_gps":true,"lat":-6.364821000001,"lon":106.828913000001,"accuracy":0,"fix_timestamp":1}
+]

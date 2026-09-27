@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "RescueNet",
+    "slug": "rescuenet-mobile",
+    "version": "1.0.0",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "id.rescuenet.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "RescueNet mengirim lokasi dan SOS ke Field Node melalui Wi-Fi lokal tanpa internet.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "192.168.4.1": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": false
+            }
+          }
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "id.rescuenet.mobile",
+      "allowBackup": false,
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RescueNet membutuhkan lokasi ponsel agar petugas dapat menerima posisi Anda saat tracking atau SOS digunakan.",
+          "locationAlwaysAndWhenInUsePermission": "Izinkan lokasi latar belakang hanya untuk melanjutkan RescueNet Tracking saat layar terkunci.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-sqlite",
+      "./plugins/withLocalNetwork.cjs"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3861c7a3-bfa5-4853-a02f-ad702ea246f5"
+      }
+    }
+  }
+}

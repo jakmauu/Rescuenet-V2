@@ -1,190 +1,112 @@
-/*
- * RescueNet - GATEWAY NODE FIRMWARE
- * ==================================
- * Board   : LILYGO T-Beam V1.2 AXP2101 - ESP32 + SX1276 + PMU AXP2101
- * Radio   : LoRa SX1276 (library: sandeepmistry/LoRa)
- * PMU     : AXP2101 (library: XPowersLib by lewisxhe) -- WAJIB, tanpa ini radio
- *           LoRa tidak dapat suplai listrik sama sekali.
- * Fungsi  :
- *   1. Mendengarkan semua paket LoRa dari field node (langsung/multi-hop)
- *   2. Melakukan dedup (paket sama tidak diproses dua kali)
- *   3. Meneruskan paket valid ke Raspberry Pi via kabel USB (Serial)
- *   4. Menampilkan status gateway di OLED (jika ada) & Serial Monitor
- *
- * Gateway ini TIDAK melakukan relay balik ke jaringan LoRa (beda dengan field node),
- * karena tugasnya hanya menyerap data menuju posko.
- *
- * Hubungkan ke Raspberry Pi via kabel USB (data). Baud rate: 115200.
- */
-
-#include <SPI.h>
-#include <LoRa.h>
+/* RescueNet 2C Gateway. LoRaMesher owns SX1276; no direct LoRa driver. */
+#include <Arduino.h>
 #include <Wire.h>
-#include <XPowersLib.h>            // Install via Library Manager: "XPowersLib" by lewisxhe
-#include <U8g2lib.h>
-
-// ================== PIN LoRa ONBOARD T-BEAM V1.2 ==================
-#define LORA_SCK   5
-#define LORA_MISO  19
-#define LORA_MOSI  27
-#define LORA_SS    18
-#define LORA_RST   23
-#define LORA_DIO0  26
-#define LORA_FREQ  923E6
-
-// ================== PIN PMU AXP2101 (I2C) ==================
-#define XPOWERS_CHIP_AXP2101
-#define PMU_SDA 21
-#define PMU_SCL 22
+#include <XPowersLib.h>
+#include <loramesher.hpp>
+#include <memory>
+#include <vector>
+#include "RescueNetWire.h"
+using namespace loramesher;
 XPowersAXP2101 PMU;
-bool pmuOK = false;
-
-// ================== PIN OLED (OPSIONAL, via I2C bus sama) ==================
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, PMU_SCL, PMU_SDA);
-bool oledOK = false;
-
-#define LED_PIN 4
-
-#define CACHE_SIZE 40
-uint16_t seenPackets[CACHE_SIZE];
-int cacheIndex = 0;
-uint32_t rxCount = 0;
-int lastRssi = 0;
-
-bool alreadySeen(uint16_t id) {
-  for (int i = 0; i < CACHE_SIZE; i++) if (seenPackets[i] == id) return true;
-  return false;
+std::unique_ptr<LoraMesher> mesh;
+struct Rx { AddressType source; uint8_t size; uint8_t data[rnwire::MAX_PACKET]; };
+QueueHandle_t incoming;
+struct PendingAck { uint8_t key[16]; AddressType source; uint32_t seenMs; bool used; };
+PendingAck pending[24]{};
+char serialLine[80]{};
+size_t serialLength = 0;
+void onData(AddressType source, const std::vector<uint8_t> &data) {
+  if (!incoming || data.empty() || data.size() > rnwire::MAX_PACKET) return;
+  Rx item{}; item.source = source; item.size = uint8_t(data.size());
+  memcpy(item.data, data.data(), data.size()); xQueueSend(incoming, &item, 0);
 }
-void markSeen(uint16_t id) {
-  seenPackets[cacheIndex] = id;
-  cacheIndex = (cacheIndex + 1) % CACHE_SIZE;
+int routeHops(AddressType source) {
+  for (const auto &route : mesh->GetRoutingTable())
+    if (route.destination == source && route.is_valid && route.hop_count > 0) return route.hop_count;
+  return -1;
 }
-
-void initPMU() {
-  pmuOK = PMU.begin(Wire, AXP2101_SLAVE_ADDRESS, PMU_SDA, PMU_SCL);
-  if (!pmuOK) {
-    Serial.println("PMU AXP2101 GAGAL diinisialisasi! LoRa tidak akan menyala.");
+void remember(const uint8_t key[16], AddressType source) {
+  size_t slot = 0;
+  for (size_t i = 0; i < 24; ++i) {
+    if (pending[i].used && !memcmp(pending[i].key, key, 16)) { slot = i; break; }
+    if (!pending[i].used || uint32_t(millis() - pending[i].seenMs) > uint32_t(millis() - pending[slot].seenMs)) slot = i;
+  }
+  memcpy(pending[slot].key, key, 16); pending[slot].source = source; pending[slot].seenMs = millis(); pending[slot].used = true;
+}
+void processReceived(const Rx &item) {
+  rnwire::Mobile mobile;
+  if (rnwire::decodeMobile(item.data, item.size, mobile)) {
+    remember(mobile.key, item.source);
+    char key[33], hex[rnwire::MAX_PACKET * 2 + 1];
+    rnwire::hexKey(mobile.key, key); rnwire::hexBytes(item.data, item.size, hex);
+    int hops = routeHops(item.source);
+    Serial.printf("[MESH RX] src=%u bytes=%u\n", unsigned(item.source), unsigned(item.size));
+    Serial.printf("RNM1,%s,%u,", key, unsigned(item.source));
+    if (hops < 0) Serial.print('-'); else Serial.print(hops);
+    Serial.print(','); Serial.println(hex);
+    Serial.printf("[RNM1] request=%s forwarded_to_serial\n", key);
     return;
   }
-  PMU.setALDO2Voltage(3300);
-  PMU.enableALDO2();   // suplai ke modul LoRa
-  Serial.println("PMU AXP2101 siap. Rail LoRa (ALDO2) dinyalakan.");
-}
-
-bool splitCSV(const String &s, String out[], int maxFields) {
-  int start = 0;
-  int fieldIndex = 0;
-
-  for (int i = 0; i <= (int)s.length(); i++) {
-    if (i == (int)s.length() || s[i] == ',') {
-      if (fieldIndex >= maxFields) return false;
-
-      if (fieldIndex == maxFields - 1) {
-        out[fieldIndex] = s.substring(start);
-        fieldIndex++;
-        break;
-      }
-
-      out[fieldIndex] = s.substring(start, i);
-      fieldIndex++;
-      start = i + 1;
-    }
+  rnwire::Legacy legacy;
+  if (rnwire::decodeLegacy(item.data, item.size, legacy)) {
+    int hops = routeHops(item.source);
+    if (hops < 1) { Serial.println("[DROP] legacy route unavailable"); return; }
+    // LoRaMesher's application callback provides no measured RSSI/SNR.
+    Serial.printf("-,-,%u,%u,%d,5,%.6f,%.6f,%u,%s,%u,%u,%s\n",
+      unsigned(legacy.packetId), unsigned(legacy.node), hops - 1,
+      (legacy.flags & 1) ? legacy.latE6 / 1000000.0 : 0.0,
+      (legacy.flags & 1) ? legacy.lonE6 / 1000000.0 : 0.0,
+      unsigned(legacy.flags & 1), legacy.condition, unsigned(legacy.count), unsigned((legacy.flags >> 1) & 1), legacy.message);
+    return;
   }
-
-  return fieldIndex == maxFields;
+  Serial.println("[DROP] invalid application frame");
 }
-
-void updateOLED(String lastEvent) {
-  if (!oledOK) return;
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x10_tf);
-  u8g2.drawStr(0, 10, "RescueNet GATEWAY");
-  u8g2.drawStr(0, 24, ("Paket diterima: " + String(rxCount)).c_str());
-  u8g2.drawStr(0, 38, ("RSSI terakhir: " + String(lastRssi) + " dBm").c_str());
-  u8g2.drawStr(0, 52, lastEvent.c_str());
-  u8g2.sendBuffer();
+void processAckLine() {
+  if (!mesh) return;
+  if (strncmp(serialLine, "RNACK1,", 7)) return;
+  char *comma = strchr(serialLine + 7, ',');
+  if (!comma || strcmp(comma + 1, "STORED")) return;
+  *comma = 0; uint8_t key[16];
+  if (!rnwire::keyHex(serialLine + 7, key)) return;
+  Serial.printf("[SERVER ACK RX] request=%s\n", serialLine + 7);
+  for (auto &entry : pending) {
+    if (!entry.used || memcmp(entry.key, key, 16)) continue;
+    rnwire::Ack ack{}; memcpy(ack.key, key, 16); ack.status = 1;
+    uint8_t packet[rnwire::MAX_PACKET]; size_t n = rnwire::encodeAck(ack, packet);
+    if (!mesh->IsReadyToSend(entry.source)) return;
+    Result result = mesh->Send(entry.source, std::vector<uint8_t>(packet, packet + n));
+    if (result) Serial.printf("[MESH ACK TX] request=%s dst=%u\n", serialLine + 7, unsigned(entry.source));
+    return;
+  }
+  Serial.println("[SERVER ACK RX] mapping unavailable; field retry will restore it");
 }
-
+void readSerial() {
+  while (Serial.available()) {
+    char c = char(Serial.read()); if (c == '\r') continue;
+    if (c == '\n') { serialLine[serialLength] = 0; processAckLine(); serialLength = 0; continue; }
+    if (serialLength + 1 < sizeof(serialLine)) serialLine[serialLength++] = c; else serialLength = 0;
+  }
+}
 void setup() {
-  Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);
-  while (!Serial) { delay(10); }
-
-  Wire.begin(PMU_SDA, PMU_SCL);
-
-  // Deteksi otomatis apakah OLED terpasang (alamat I2C standar SSD1306 = 0x3C)
-  Wire.beginTransmission(0x3C);
-  oledOK = (Wire.endTransmission() == 0);
-  if (oledOK) {
-    u8g2.begin();
-    updateOLED("Booting...");
-    Serial.println("OLED terdeteksi.");
-  } else {
-    Serial.println("OLED tidak terdeteksi (board tanpa layar) -- status hanya via Serial Monitor.");
-  }
-
-  initPMU();
-
-  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
-  LoRa.setSPI(SPI);
-  LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
-  if (!LoRa.begin(LORA_FREQ)) {
-    Serial.println("LoRa init GAGAL! Periksa modul/board/PMU.");
-    updateOLED("LoRa GAGAL init!");
-    while (1) { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); delay(200); }
-  }
-  LoRa.setSpreadingFactor(9);
-  LoRa.setSignalBandwidth(125E3);
-  LoRa.setCodingRate4(5);
-  LoRa.setSyncWord(0xF3); // HARUS SAMA dengan sync word di field_node.ino
-  LoRa.enableCrc();
-
+  Serial.begin(115200); Wire.begin(21, 22); pinMode(4, OUTPUT);
+  if (!PMU.begin(Wire, AXP2101_SLAVE_ADDRESS, 21, 22)) { Serial.println("[MESH] PMU failure"); return; }
+  PMU.setALDO2Voltage(3300); PMU.enableALDO2();
+  if (!PMU.isEnableALDO2()) { Serial.println("[MESH] ALDO2 unavailable"); return; }
+  incoming = xQueueCreate(12, sizeof(Rx));
+  if (!incoming) { Serial.println("[MESH] RX queue unavailable"); return; }
+  RadioConfig radio(RadioType::kSx1276, 923.0F, 9, 125.0F, 5, 17, 0xF3, true, 8);
+  PinConfig pins(18, 23, 26, 33, 5, 19, 27);
+  LoRaMeshProtocolConfig protocol; protocol.setNodeRole(NodeRole::NETWORK_MANAGER); protocol.setMaxPacketSize(115);
+  mesh = LoraMesher::Builder().withRadioConfig(radio).withPinConfig(pins)
+    .withLoRaMeshProtocol(protocol).withNodeCapabilities(NodeCapabilities::GATEWAY).Build();
+  mesh->SetDataCallback(onData);
+  Result started = mesh->Start();
+  if (!started) { Serial.printf("[MESH] start failed: %s\n", started.GetErrorMessage().c_str()); mesh.reset(); return; }
+  Serial.printf("[MESH] NETWORK_MANAGER ready address=%u\n", unsigned(mesh->GetNodeAddress()));
   Serial.println("GATEWAY_READY");
-  updateOLED("Siap. Menunggu paket...");
 }
-
 void loop() {
-  int packetSize = LoRa.parsePacket();
-  if (packetSize == 0) return;
-
-  String incoming = "";
-  while (LoRa.available()) incoming += (char)LoRa.read();
-
-  int rssi = LoRa.packetRssi();
-  float snr = LoRa.packetSnr();
-  lastRssi = rssi;
-
-  const int NFIELD = 11;
-  String fields[NFIELD];
-  if (!splitCSV(incoming, fields, NFIELD)) {
-    Serial.println("[DROP] Format paket tidak valid.");
-    return;
-  }
-
-  uint16_t pktId = (uint16_t)fields[0].toInt();
-  if (pktId == 0) {
-    Serial.println("[DROP] Packet ID tidak valid.");
-    return;
-  }
-
-  int maxHop = fields[3].toInt();
-  if (maxHop < 0 || maxHop > 20) {
-    Serial.println("[DROP] MAX_HOP tidak valid.");
-    return;
-  }
-
-  if (alreadySeen(pktId)) return; // sudah pernah diteruskan ke server
-  markSeen(pktId);
-  rxCount++;
-
-  digitalWrite(LED_PIN, HIGH); delay(60); digitalWrite(LED_PIN, LOW);
-  updateOLED("Paket diteruskan ke RPi");
-
-  // Kirim ke Raspberry Pi dalam format: RSSI,SNR,<payload_asli_csv>
-  // payload_asli_csv = PKT_ID,SRC_ID,HOP,MAX_HOP,LAT,LON,HAS_GPS,KONDISI,JUMLAH,SOS,PESAN
-  Serial.print(rssi);
-  Serial.print(",");
-  Serial.print(snr, 1);
-  Serial.print(",");
-  Serial.println(incoming);
+  readSerial();
+  if (mesh && incoming) { Rx item; for (int i = 0; i < 4 && xQueueReceive(incoming, &item, 0) == pdTRUE; ++i) processReceived(item); }
+  delay(10);
 }

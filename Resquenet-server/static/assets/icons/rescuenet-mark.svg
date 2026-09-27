@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">RescueNet</title>
+  <path fill="#64b5f6" d="M24 3 42 10v12c0 11.2-7.3 19.2-18 23C13.3 41.2 6 33.2 6 22V10l18-7Z"/>
+  <path fill="#0d2038" d="M21 12h6v9h9v6h-9v9h-6v-9h-9v-6h9v-9Z"/>
+</svg>

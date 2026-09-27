@@ -1,0 +1,20 @@
+profiles:
+  checkpoint_2c:
+    fqbn: esp32:esp32:ttgo-lora32:Revision=TTGO_LoRa32_V1,EraseFlash=none
+    platforms:
+      - platform: esp32:esp32 (3.3.3)
+    libraries:
+      - ArduinoJson (6.21.5)
+      - LoRaMesher (1.0.0)
+      - RadioLib (7.1.2)
+      - XPowersLib (0.3.3)
+      - U8g2 (2.36.19)
+  checkpoint_2b:
+    fqbn: esp32:esp32:ttgo-lora32:Revision=TTGO_LoRa32_V1,EraseFlash=none
+    platforms:
+      - platform: esp32:esp32 (3.3.3)
+    libraries:
+      - ArduinoJson (6.21.5)
+      - LoRa (0.8.0)
+      - XPowersLib (0.3.3)
+      - U8g2 (2.36.19)

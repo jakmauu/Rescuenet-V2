@@ -10,9 +10,10 @@
  * GPS     : NEO-M8N / compatible
  *
  * Library:
- *   - LoRa by Sandeep Mistry
+ *   - LoRaMesher 1.0.0 + RadioLib 7.1.2 (Checkpoint 2C)
  *   - XPowersLib by Lewis He
  *   - U8g2 by Oliver
+ *   - ArduinoJson 6.21.5 (mobile HTTP, ESP32 core 3.3.3)
  *
  * Fungsi:
  *   1. WiFi Access Point
@@ -21,8 +22,8 @@
  *   4. SOS portal
  *   5. SOS tombol fisik
  *   6. Pengiriman data melalui LoRa
- *   7. Relay/flooding paket LoRa
- *   8. Deduplication paket
+ *   7. LoRaMesher multi-hop routing
+ *   8. End-to-end STORED ACK dan deduplikasi paket
  *   9. Monitoring OLED opsional
  *
  * PENTING:
@@ -40,12 +41,13 @@
 #include <DNSServer.h>
 
 #include <SPI.h>
-#include <LoRa.h>
 
 #include <Wire.h>
 #include <XPowersLib.h>
 
 #include <U8g2lib.h>
+#include "MobileApi.h"
+#include "RescueNetMeshTransport.h"
 
 
 // ================================================================
@@ -154,7 +156,9 @@ uint32_t rxCount = 0;
 // ================================================================
 
 DNSServer dnsServer;
-WebServer server(80);
+MobileWebServer server(80);
+MobileApi mobileApi(server, NODE_ID);
+RescueNetMeshTransport meshTransport(mobileApi, NODE_ID);
 
 const byte DNS_PORT = 53;
 
@@ -919,6 +923,11 @@ void handleRoot()
 
 void handleNotFound()
 {
+    if (server.uri() == "/api" || server.uri().startsWith("/api/"))
+    {
+        server.send(404, "application/json", "{\"service\":\"rescuenet-field-node\",\"accepted\":false,\"error\":\"api_not_found\"}");
+        return;
+    }
     server.sendHeader(
         "Location",
         "http://192.168.4.1/",
@@ -969,6 +978,7 @@ String sanitize(String s, int maxLen)
 // SEND RAW LORA
 // ================================================================
 
+#if 0 // retired direct-radio implementation; LoRaMesher exclusively owns SX1276
 bool sendLoRaPacket(const String &payload)
 {
     Serial.println(
@@ -1032,8 +1042,9 @@ bool sendLoRaPacket(const String &payload)
 // ================================================================
 // MEMBUAT REPORT BARU
 // ================================================================
+#endif
 
-void sendReport(
+bool sendReport(
     bool hasGps,
     float lat,
     float lon,
@@ -1052,9 +1063,6 @@ void sendReport(
     uint16_t pktId =
         ((uint16_t)(NODE_ID & 0x0F) << 12) |
         (packetCounter++ & 0x0FFF);
-
-
-    markSeen(pktId);
 
 
     kondisi = sanitize(
@@ -1090,33 +1098,17 @@ void sendReport(
     // ------------------------------------------------------------
 
 
-    String payload =
-        String(pktId) + "," +
-
-        String(NODE_ID) + "," +
-
-        "0," +
-
-        String(MAX_HOP) + "," +
-
-        String(lat, 6) + "," +
-
-        String(lon, 6) + "," +
-
-        String(hasGps ? 1 : 0) + "," +
-
-        kondisi + "," +
-
-        String(jumlah) + "," +
-
-        String(sos ? 1 : 0) + "," +
-
-        pesan;
-
-
-    sendLoRaPacket(
-        payload
-    );
+    rnwire::Legacy report{};
+    report.packetId = pktId;
+    report.node = NODE_ID;
+    report.flags = (hasGps ? 1 : 0) | (sos ? 2 : 0);
+    report.count = uint8_t(constrain(jumlah, 1, 255));
+    report.latE6 = hasGps ? int32_t(lround(lat * 1000000.0)) : 0;
+    report.lonE6 = hasGps ? int32_t(lround(lon * 1000000.0)) : 0;
+    strncpy(report.condition, kondisi.c_str(), 10);
+    strncpy(report.message, pesan.c_str(), 70);
+    if (!meshTransport.enqueueLegacy(report)) { Serial.println("[DROP] legacy TX queue full"); return false; }
+    return true;
 }
 
 
@@ -1184,7 +1176,7 @@ void handleSubmit()
         );
 
 
-    sendReport(
+    if (!sendReport(
         hasGps,
         lat,
         lon,
@@ -1192,7 +1184,7 @@ void handleSubmit()
         jumlah,
         false,
         pesan
-    );
+    )) { server.send(503, "text/plain", "Antrean jaringan penuh; coba kembali."); return; }
 
 
     server.send(
@@ -1208,11 +1200,11 @@ void handleSubmit()
         "padding-top:60px'>"
 
         "<h2 style='color:#0f9d58'>"
-        "&#10004; Laporan terkirim"
+        "&#10004; Laporan masuk antrean"
         "</h2>"
 
         "<p>"
-        "Laporan sudah dikirim melalui jaringan RescueNet."
+        "Laporan diterima node dan menunggu pengiriman mesh."
         "</p>"
 
         "<a href='/' style='color:#e94560'>"
@@ -1241,7 +1233,7 @@ void handleSOS()
         lon
     );
 
-    sendReport(
+    if (!sendReport(
         hasGps,
         lat,
         lon,
@@ -1249,7 +1241,7 @@ void handleSOS()
         1,
         true,
         "SOS-TOMBOL-PORTAL"
-    );
+    )) { server.send(503, "text/plain", "Antrean jaringan penuh; SOS belum terkirim. Coba kembali."); return; }
 
 
     server.send(
@@ -1265,11 +1257,11 @@ void handleSOS()
         "padding-top:60px'>"
 
         "<h2 style='color:#e94560'>"
-        "&#128680; SOS terkirim!"
+        "&#128680; SOS masuk antrean!"
         "</h2>"
 
         "<p>"
-        "Sinyal darurat telah dikirim ke jaringan RescueNet."
+        "Sinyal darurat diterima node dan menunggu pengiriman mesh."
         "</p>"
 
         "<a href='/' style='color:#eee'>"
@@ -1286,6 +1278,7 @@ void handleSOS()
 // SPLIT CSV
 // ================================================================
 
+#if 0 // obsolete application-level flood/relay; LoRaMesher routes packets
 bool splitCSV(
     const String &s,
     String out[],
@@ -1595,6 +1588,7 @@ void checkLoRaReceive()
 // INIT OLED
 // ================================================================
 
+#endif
 void initOLED()
 {
 
@@ -1764,6 +1758,7 @@ void initWiFi()
 // INIT LORA
 // ================================================================
 
+#if 0 // obsolete Sandeep LoRa initializer
 bool initLoRa()
 {
 
@@ -1918,6 +1913,7 @@ bool initLoRa()
 // SETUP
 // ================================================================
 
+#endif
 void setup()
 {
 
@@ -2051,47 +2047,14 @@ void setup()
 
 
     // ------------------------------------------------------------
-    // LoRa
-    // ------------------------------------------------------------
-
-    bool loraOK =
-        initLoRa();
-
-
-    if (!loraOK)
-    {
-
-        updateOLED(
-            "LoRa ERROR"
-        );
-
-
-        while (true)
-        {
-
-            digitalWrite(
-                LED_PIN,
-                HIGH
-            );
-
-            delay(200);
-
-
-            digitalWrite(
-                LED_PIN,
-                LOW
-            );
-
-            delay(200);
-        }
-    }
-
-
-    // ------------------------------------------------------------
     // WiFi
     // ------------------------------------------------------------
 
+    // Wi-Fi entropy is active before allocating a mobile boot session.
+    // Mobile queue is restored before HTTP requests can be served in loop().
     initWiFi();
+    mobileApi.begin(pmuOK && PMU.isEnableALDO2());
+    meshTransport.begin(pmuOK && PMU.isEnableALDO2());
 
 
     String ssid =
@@ -2178,7 +2141,7 @@ void loop()
     // LoRa Receiver
     // ------------------------------------------------------------
 
-    checkLoRaReceive();
+    meshTransport.tick();
 
 
     // ------------------------------------------------------------
@@ -2225,7 +2188,7 @@ void loop()
         );
 
 
-        sendReport(
+        if (!sendReport(
             hasGps,
             lat,
             lon,
@@ -2233,7 +2196,7 @@ void loop()
             1,
             true,
             "SOS-TOMBOL-FISIK"
-        );
+        )) { Serial.println("[SOS] physical portal report queue FULL; not delivered"); updateOLED("SOS queue FULL"); }
     }
 
 

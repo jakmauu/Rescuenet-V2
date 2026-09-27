@@ -1,0 +1,38 @@
+{
+  "name": "rescuenet-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "export:android": "expo export --platform android",
+    "export:ios": "expo export --platform ios",
+    "doctor": "npx expo-doctor",
+    "build:apk": "node scripts/eas.cjs build -p android --profile preview",
+    "eas": "node scripts/eas.cjs"
+  },
+  "dependencies": {
+    "@types/react": "~19.2.10",
+    "expo": "~55.0.31",
+    "expo-crypto": "~55.0.19",
+    "expo-dev-client": "~55.0.40",
+    "expo-location": "~55.1.14",
+    "expo-network": "~55.0.18",
+    "expo-sqlite": "~55.0.20",
+    "expo-system-ui": "~55.0.22",
+    "expo-task-manager": "~55.0.20",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "react-native-safe-area-context": "~5.6.2"
+  },
+  "overrides": {
+    "xcode": { "uuid": "11.1.1" }
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.0.0"
+  }
+}
