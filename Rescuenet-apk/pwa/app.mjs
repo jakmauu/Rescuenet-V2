@@ -1,17 +1,22 @@
-import { createRequestId, deliverSos, getBrowserLocation, makeSosPacket, NodeApiError, probeNode } from './core.mjs';
+import { createRequestId, deliverSos, getBrowserLocation, makeLocationPacket, makeSosPacket, NodeApiError, probeNode, shouldQueueLocation, transmitLocation } from './core.mjs';
 
-const keys = { user: 'rn.pwa.user.v1', location: 'rn.pwa.location.v1', report: 'rn.pwa.sos.v1' };
+const keys = { user: 'rn.pwa.user.v1', location: 'rn.pwa.location.v1', report: 'rn.pwa.sos.v1', tracking: 'rn.pwa.tracking.v1', queuedLocation: 'rn.pwa.location.queued.v1', pendingLocation: 'rn.pwa.location.pending.v1', sentLocation: 'rn.pwa.location.sent.v1' };
 const $ = id => document.getElementById(id);
 const ui = {
   pill: $('connection-pill'), connectionTitle: $('connection-title'), connectionHelp: $('connection-help'),
   check: $('check-button'), sos: $('sos-button'), sosLabel: $('sos-button-label'), permission: $('permission-status'),
-  gps: $('gps-status'), coordinates: $('coordinates'), location: $('location-button'), report: $('report-status'),
+  gps: $('gps-status'), coordinates: $('coordinates'), location: $('location-button'), tracking: $('tracking-button'), trackingStatus: $('tracking-status'), report: $('report-status'),
   reportDetail: $('report-detail'), retry: $('retry-button'), name: $('name-input'), saveName: $('save-name-button'), toast: $('toast'),
 };
 let nodeReady = false;
 let checking = false;
 let sending = false;
 let locationBusy = false;
+let locationSending = false;
+let locationWatch = null;
+let locationPollTimer = null;
+let locationPollBusy = false;
+let tracking = load(keys.tracking) === true;
 let connectionError = '';
 let locationFix = load(keys.location);
 let report = load(keys.report);
@@ -52,6 +57,16 @@ function renderLocation() {
     : 'Koordinat belum tersedia';
   ui.location.disabled = locationBusy;
   ui.location.textContent = locationBusy ? 'Mencari GPS…' : 'Izinkan / perbarui lokasi';
+  ui.tracking.textContent = tracking ? 'Hentikan berbagi lokasi' : 'Mulai bagikan lokasi';
+  const lastSent = load(keys.sentLocation);
+  ui.trackingStatus.textContent = !tracking
+    ? 'Berbagi lokasi berhenti. Aktifkan hanya jika Anda setuju membagikan lokasi ke jaringan RescueNet.'
+    : document.visibilityState !== 'visible'
+      ? 'Berbagi lokasi dijeda saat aplikasi tidak aktif. iPhone tidak menjamin tracking PWA di latar belakang.'
+      : locationSending ? 'Mengirim lokasi terbaru ke Field Node…'
+        : load(keys.pendingLocation) ? 'Lokasi terbaru tersimpan di perangkat; menunggu koneksi dan ACK Field Node.'
+        : lastSent?.at ? `Berbagi aktif di aplikasi. Terakhir diterima Field Node ${new Date(lastSent.at).toLocaleTimeString('id-ID')}.`
+          : 'Berbagi aktif selama aplikasi terbuka; menunggu fix GPS dan ACK Field Node.';
 }
 function renderReport() {
   if (!report) {
@@ -73,11 +88,11 @@ async function checkConnection() {
   if (checking) return false;
   checking = true; setNode(nodeReady);
   try {
-    const status = await probeNode(); connectionError = ''; setNode(true, status.node_id); return true;
+    const status = await probeNode(); connectionError = ''; setNode(true, status.node_id); void flushPendingLocation(); return true;
   } catch (error) {
     setNode(false);
     connectionError = error instanceof NodeApiError
-      ? `${error.message} Jika Wi-Fi sudah benar, browser mungkin membatasi akses HTTPS PWA ke API HTTP lokal.`
+      ? `${error.message} Pastikan firmware Field Node terbaru sudah di-upload agar mengizinkan CORS dari PWA. Safari iPhone juga dapat membatasi akses HTTPS ke HTTP lokal.`
       : 'Field Node tidak dapat diverifikasi. Periksa Wi-Fi lalu coba lagi.';
     return false;
   } finally { checking = false; setNode(nodeReady, nodeReady ? ui.pill.textContent.replace('Terhubung · Node ', '') : ''); }
@@ -103,6 +118,85 @@ async function requestLocation() {
     else if (error.code === 'GPS_FAILED') store('rn.pwa.location-permission.v1', 'granted');
     message(error.message || 'Lokasi gagal diperbarui.');
   } finally { locationBusy = false; renderLocation(); }
+}
+function onTrackingFix(fix) {
+  locationFix = fix;
+  try { store(keys.location, fix); store('rn.pwa.location-permission.v1', 'granted'); }
+  catch { message('GPS aktif, tetapi penyimpanan lokal gagal.'); }
+  renderLocation();
+  if (!tracking || !user() || !shouldQueueLocation(load(keys.queuedLocation), fix)) return;
+  try {
+    const packet = makeLocationPacket(user(), fix, createRequestId());
+    store(keys.pendingLocation, packet); // Keep the exact ID/body until Field Node ACKs it.
+    store(keys.queuedLocation, fix);
+    void flushPendingLocation();
+  } catch (error) { message(error.message || 'Lokasi belum siap dibagikan.'); }
+}
+async function flushPendingLocation() {
+  const packet = load(keys.pendingLocation);
+  if (!tracking || !nodeReady || !packet || locationSending || sending || document.visibilityState !== 'visible') return;
+  // A delayed retry must never overwrite the server's latest position with an old fix.
+  if (!Number.isFinite(packet.timestamp) || Date.now() - packet.timestamp * 1000 > 120_000) return;
+  locationSending = true; renderLocation();
+  try {
+    const ack = await transmitLocation(packet);
+    if (load(keys.pendingLocation)?.request_id === packet.request_id) {
+      store(keys.pendingLocation, null);
+      store(keys.sentLocation, { at: Date.now(), nodeId: ack.node_id ?? null, requestId: packet.request_id });
+    }
+  } catch (error) {
+    if (error.code === 'NETWORK' || error.code === 'TIMEOUT' || error.code === 'INCOMPATIBLE') {
+      nodeReady = false;
+      connectionError = `${error.message} Lokasi terbaru tetap tersimpan di perangkat dan akan dicoba lagi.`;
+      setNode(false);
+    } else message(error.message || 'Lokasi belum dikonfirmasi Field Node; akan dicoba lagi.');
+  } finally { locationSending = false; renderLocation(); }
+}
+function stopLocationWatch() {
+  if (locationWatch !== null) navigator.geolocation?.clearWatch(locationWatch);
+  if (locationPollTimer !== null) clearInterval(locationPollTimer);
+  locationPollTimer = null; locationPollBusy = false;
+  locationWatch = null; locationBusy = false;
+}
+function startLocationWatch() {
+  if (!tracking || document.visibilityState !== 'visible' || locationWatch !== null) return;
+  if (!window.isSecureContext || !navigator.geolocation?.watchPosition) {
+    message('Pelacakan GPS memerlukan PWA HTTPS dan dukungan lokasi browser.'); return;
+  }
+  locationBusy = true; renderLocation();
+  locationWatch = navigator.geolocation.watchPosition(position => {
+    locationBusy = false;
+    onTrackingFix({ lat: position.coords.latitude, lon: position.coords.longitude,
+      accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+      timestamp: position.timestamp || Date.now() });
+  }, error => {
+    locationBusy = false;
+    if (error.code === 1) store('rn.pwa.location-permission.v1', 'denied');
+    renderLocation();
+    message(error.code === 1 ? 'Izin GPS ditolak. Izinkan lokasi di Pengaturan iPhone untuk RescueNet.' : 'GPS belum mendapat posisi. Pastikan Layanan Lokasi aktif dan coba di area terbuka.');
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 });
+  // watchPosition has no portable sampling interval; poll while foregrounded so
+  // a stationary phone also refreshes the last known fix like Android tracking.
+  locationPollTimer = setInterval(async () => {
+    if (!tracking || document.visibilityState !== 'visible' || locationPollBusy) return;
+    locationPollBusy = true;
+    try { onTrackingFix(await getBrowserLocation()); }
+    catch (error) {
+      if (error.code === 'GPS_DENIED') store('rn.pwa.location-permission.v1', 'denied');
+      renderLocation();
+    } finally { locationPollBusy = false; }
+  }, 30_000);
+  renderLocation();
+}
+function toggleTracking() {
+  if (tracking) {
+    tracking = false; store(keys.tracking, false); stopLocationWatch();
+    store(keys.pendingLocation, null); store(keys.queuedLocation, null); renderLocation();
+    message('Berbagi lokasi dihentikan. Lokasi yang sudah diterima Field Node tidak dihapus.'); return;
+  }
+  if (!user()) { document.querySelector('.identity-card').open = true; message('Simpan nama pelapor sebelum berbagi lokasi.'); return; }
+  if (!window.isSecureContext) { message('GPS dan PWA memerlukan halaman HTTPS.'); return; }
+  tracking = true; store(keys.tracking, true); renderLocation(); startLocationWatch(); void checkConnection();
 }
 function saveName() {
   const name = ui.name.value.trim();
@@ -138,7 +232,7 @@ async function sendCurrentSos() {
       try { store(keys.report, report); } catch { message('SOS gagal dan penyimpanan lokal juga gagal. Jangan anggap terkirim.'); }
       renderReport();
     } else message(error.message || 'Field Node tidak dapat diverifikasi.');
-  } finally { sending = false; setNode(nodeReady, nodeReady ? ui.pill.textContent.replace('Terhubung · Node ', '') : ''); }
+  } finally { sending = false; setNode(nodeReady, nodeReady ? ui.pill.textContent.replace('Terhubung · Node ', '') : ''); void flushPendingLocation(); }
 }
 
 ui.check.addEventListener('click', () => { void checkConnection(); });
@@ -149,8 +243,12 @@ ui.retry.addEventListener('click', async () => {
   void sendCurrentSos();
 });
 ui.location.addEventListener('click', () => { void requestLocation(); });
+ui.tracking.addEventListener('click', toggleTracking);
 ui.saveName.addEventListener('click', saveName);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void checkConnection(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { void checkConnection(); startLocationWatch(); }
+  else { stopLocationWatch(); renderLocation(); }
+});
 window.addEventListener('pageshow', () => { void checkConnection(); });
 window.addEventListener('focus', () => { void checkConnection(); });
 setInterval(() => { if (document.visibilityState === 'visible') void checkConnection(); }, 15_000);
@@ -164,5 +262,5 @@ if (report?.status === 'SENDING') {
   report = { ...report, status: 'FAILED', error: 'Aplikasi ditutup sebelum ACK diterima. Status belum pasti; coba kirim ulang dengan ID laporan yang sama.' };
   try { store(keys.report, report); } catch { /* Fail closed; the visible error is still truthful. */ }
 }
-renderLocation(); renderReport(); setNode(false); void refreshPermissionState(); void checkConnection();
+renderLocation(); renderReport(); setNode(false); void refreshPermissionState(); void checkConnection(); if (tracking) startLocationWatch();
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('./service-worker.js').catch(() => {});

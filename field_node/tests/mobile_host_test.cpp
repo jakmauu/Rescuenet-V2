@@ -74,6 +74,8 @@ static void validationTests() {
   Message m;
   check(!parse(location(), false, m), "location valid");
   check(m.lat == -6.364821 && m.lon == 106.828913 && m.fixTime == 100 && m.eventTime == 100, "smartphone values preserved");
+  const std::string pwaLocation = "{\"user_id\":\"USR-test\",\"name\":\"Riko Dharmawan\",\"request_id\":\"loc-123\",\"timestamp\":1000,\"has_gps\":true,\"lat\":-6.2088,\"lon\":106.8456,\"accuracy\":6.8}";
+  check(!parse(pwaLocation, false, m) && m.fixTime == 1000 && m.lat == -6.2088, "PWA foreground tracking packet matches production Field API");
   check(!parse(sos(), true, m) && !m.hasGps && !m.fixTime, "SOS without GPS");
   auto gpsSos = replace(location(), "\"fix_timestamp\":100", "\"sos\":true,\"event_timestamp\":101,\"fix_timestamp\":100");
   check(!parse(gpsSos, true, m) && m.hasGps && m.eventTime == 101, "SOS with GPS");
@@ -202,6 +204,16 @@ static void headerTests() {
   check(headers(replace(post, "Host: 192.168.4.1", "Idempotency-Key: " + std::string(41, 'x'))).code == 400, "bounded idempotency header");
   check(headers(replace(post, "Host: 192.168.4.1", "Idempotency-Key: LOC-1\r\nIdempotency-Key: LOC-1")).code == 400, "duplicate idempotency header");
   check(headers(replace(post, "Host: 192.168.4.1", "Expect: 100-continue")).code == 400, "no blocking expect");
+  const std::string preflight = "OPTIONS /api/sos HTTP/1.1\r\nHost: 192.168.4.1\r\nOrigin: https://jakmauu.github.io\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: content-type,idempotency-key\r\nAccess-Control-Request-Private-Network: true\r\n\r\n";
+  HttpHeaders parsedPreflight; auto preflightResult = [&]() { std::vector<char> b(preflight.begin(), preflight.end()); b.push_back(0); return parseHeaders(b.data(), parsedPreflight); }();
+  check(!preflightResult.error && parsedPreflight.privateNetwork && !strcmp(parsedPreflight.origin, "https://jakmauu.github.io"), "PWA local-network CORS preflight accepted");
+  check(allowedPwaOrigin(parsedPreflight), "configured PWA origin allowed");
+  std::string otherOrigin = replace(preflight, "https://jakmauu.github.io", "https://evil.example");
+  HttpHeaders parsedOther; auto otherResult = [&]() { std::vector<char> b(otherOrigin.begin(), otherOrigin.end()); b.push_back(0); return parseHeaders(b.data(), parsedOther); }();
+  check(!otherResult.error && !allowedPwaOrigin(parsedOther), "untrusted PWA origin denied CORS");
+  check(headers(replace(preflight, "content-type,idempotency-key", "x-evil-header")).code == 403, "unapproved browser header rejected");
+  check(headers(replace(preflight, "Access-Control-Request-Method: POST", "Access-Control-Request-Method: DELETE")).code == 400, "unsupported preflight method rejected");
+  check(headers(replace(preflight, "/api/sos", "/api/status")).code == 405, "preflight method must match endpoint");
   check(apiPath("/api") && apiPath("/api/foo") && !apiPath("/apiary"), "API boundary not portal lookalike");
 }
 static void journalTests() {

@@ -19,25 +19,48 @@ class MobileWebServer : public WebServer {
     _currentRaw.reset(); _currentUpload.reset(); readingBody = false; received = headerRemaining = 0;
   }
   void resetResponse() { _contentLength = CONTENT_LENGTH_NOT_SET; _responseCode = 0; _clearResponseHeaders(); }
+  bool addCorsHeaders() {
+    if (!incoming.origin[0]) return true; // Native clients do not send Origin.
+    if (!rescue_mobile::allowedPwaOrigin(incoming)) return false;
+    sendHeader("Access-Control-Allow-Origin", "https://jakmauu.github.io");
+    sendHeader("Vary", "Origin");
+    return true;
+  }
   void error(int code, const char *reason) {
     _currentVersion = 1;
     resetResponse();
     char response[192];
     snprintf(response, sizeof(response), "{\"service\":\"rescuenet-field-node\",\"accepted\":false,\"error\":\"%s\"}", reason);
+    addCorsHeaders();
     sendHeader("Connection", "close"); send(code, "application/json", response);
     release();
   }
   void dispatch() {
     body[received] = 0;
     _currentUri = incoming.path;
-    _currentMethod = strcmp(incoming.method, "GET") == 0 ? HTTP_GET : HTTP_POST;
     _currentVersion = 1;
+    resetResponse();
+    if (!addCorsHeaders()) { error(403, "origin_not_allowed"); return; }
+    if (!strcmp(incoming.method, "OPTIONS")) {
+      if (!incoming.origin[0]) { error(403, "cors_origin_required"); return; }
+      sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      sendHeader("Access-Control-Allow-Headers", "Accept, Content-Type, Idempotency-Key");
+      sendHeader("Access-Control-Max-Age", "600");
+      if (incoming.privateNetwork) sendHeader("Access-Control-Allow-Private-Network", "true");
+      sendHeader("Connection", "close");
+      send(204, "text/plain", "");
+      release();
+      return;
+    }
+    _currentMethod = strcmp(incoming.method, "GET") == 0 ? HTTP_GET : HTTP_POST;
     // The normal route registry still owns endpoint dispatch.
     _currentHandler = nullptr;
     for (RequestHandler *handler = _firstHandler; handler; handler = handler->next()) {
       if (handler->canHandle(*this, _currentMethod, _currentUri)) { _currentHandler = handler; break; }
     }
-    resetResponse(); sendHeader("Connection", "close");
+    resetResponse();
+    addCorsHeaders();
+    sendHeader("Connection", "close");
     _handleRequest();
     release();
   }
@@ -51,7 +74,7 @@ public:
       _currentClient = _server.accept();
       if (!_currentClient) return;
       _currentStatus = HC_WAIT_READ; _statusChange = began = millis();
-      readingBody = false; received = headerRemaining = 0;
+      readingBody = false; received = headerRemaining = 0; incoming = rescue_mobile::HttpHeaders{};
     }
     if (_currentStatus != HC_WAIT_READ) { WebServer::handleClient(); return; }
     if (uint32_t(millis() - began) > 2000) { error(400, "request_timeout"); return; }

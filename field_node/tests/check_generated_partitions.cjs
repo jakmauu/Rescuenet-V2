@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const repo = path.resolve(__dirname, '../..');
-const toolBuild = 'D:/RescueNET-tools';
+const fieldBuild = process.argv[2] || 'D:/RescueNET-tools/build-field-2c';
+const gatewayBuild = process.argv[3] || 'D:/RescueNET-tools/build-gateway-2c';
 const typeCode = {app: 0, data: 1};
 const subtypeCode = {ota_0: 0x10, ota_1: 0x11, nvs: 2, ota: 0, spiffs: 0x82, coredump: 3};
 function csv(file) {
@@ -26,7 +27,8 @@ function binary(file) {
 }
 for (const [name, sketch] of [['Field', 'field_node'], ['Gateway', 'gateway_node']]) {
   const expected = csv(path.join(repo, sketch, 'partitions.csv'));
-  const actual = binary(path.join(toolBuild, `build-${name.toLowerCase()}-2c`, `${sketch}.ino.partitions.bin`));
+  const build = name === 'Field' ? fieldBuild : gatewayBuild;
+  const actual = binary(path.join(build, `${sketch}.ino.partitions.bin`));
   assert.deepEqual(actual, expected, `${name} generated binary must match sketch CSV exactly`);
   let end = 0x9000;
   for (const part of actual) {
