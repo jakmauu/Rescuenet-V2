@@ -263,4 +263,7 @@ if (report?.status === 'SENDING') {
   try { store(keys.report, report); } catch { /* Fail closed; the visible error is still truthful. */ }
 }
 renderLocation(); renderReport(); setNode(false); void refreshPermissionState(); void checkConnection(); if (tracking) startLocationWatch();
-if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' })
+    .then(registration => registration.update()).catch(() => {});
+}
