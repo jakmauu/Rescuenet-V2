@@ -1,6 +1,9 @@
 export const NODE_URL = (typeof window !== 'undefined' && window.location.hostname === '192.168.4.1') ? '' : 'http://192.168.4.1';
 export const LOCATION_MAX_AGE_MS = 120_000;
 export const REQUEST_TIMEOUT_MS = 3_000;
+export const TRACKING_INTERVAL_MS = 30_000;
+export const MIN_MOVEMENT_INTERVAL_MS = 15_000;
+export const MOVEMENT_THRESHOLD_METERS = 25;
 
 export class NodeApiError extends Error {
   constructor(message, code = 'NODE_ERROR') { super(message); this.name = 'NodeApiError'; this.code = code; }
@@ -76,6 +79,48 @@ export function makeSosPacket(user, location, requestId, now = Date.now()) {
 export function verifySosAck(data, requestId) {
   return isRecord(data) && data.service === 'rescuenet-field-node'
     && data.accepted === true && data.request_id === requestId;
+}
+
+export function makeLocationPacket(user, location, requestId, now = Date.now()) {
+  if (!user || typeof user.user_id !== 'string' || !user.user_id || typeof user.name !== 'string' || !user.name.trim()) {
+    throw new NodeApiError('Isi dan simpan nama pelapor terlebih dahulu.', 'PROFILE');
+  }
+  if (!location || !Number.isFinite(location.lat) || Math.abs(location.lat) > 90
+    || !Number.isFinite(location.lon) || Math.abs(location.lon) > 180
+    || !Number.isFinite(location.timestamp) || now - location.timestamp < -5_000 || now - location.timestamp > LOCATION_MAX_AGE_MS) {
+    throw new NodeApiError('Fix GPS belum tersedia atau sudah terlalu lama untuk dibagikan.', 'GPS_FAILED');
+  }
+  return { ...user, request_id: requestId, timestamp: Math.floor(location.timestamp / 1000), has_gps: true,
+    lat: location.lat, lon: location.lon, accuracy: location.accuracy };
+}
+
+export function shouldQueueLocation(previous, current) {
+  if (!previous) return true;
+  const elapsed = current.timestamp - previous.timestamp;
+  if (elapsed >= TRACKING_INTERVAL_MS) return true;
+  if (elapsed < MIN_MOVEMENT_INTERVAL_MS) return false;
+  const radians = Math.PI / 180;
+  const dLat = (current.lat - previous.lat) * radians;
+  const dLon = (current.lon - previous.lon) * radians;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(previous.lat * radians) * Math.cos(current.lat * radians) * Math.sin(dLon / 2) ** 2;
+  return 6_371_000 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a)))) >= MOVEMENT_THRESHOLD_METERS;
+}
+
+export async function transmitLocation(packet, fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const response = await fetchWithTimeout(fetcher, `${NODE_URL}/api/location`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': packet.request_id },
+    body: JSON.stringify(packet), cache: 'no-store', targetAddressSpace: 'local',
+  }, timeoutMs);
+  const ack = await readJson(response);
+  if (!verifySosAck(ack, packet.request_id)) throw new NodeApiError('Field Node belum mengonfirmasi lokasi terbaru.', 'ACK');
+  return ack;
+}
+
+export async function deliverLocation(packet, fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const status = await probeNode(fetcher, timeoutMs);
+  const ack = await transmitLocation(packet, fetcher, timeoutMs);
+  return { status, ack };
 }
 
 export async function transmitSos(packet, fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS) {

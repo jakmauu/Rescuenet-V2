@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverSos, getBrowserLocation, makeSosPacket, NodeApiError, probeNode } from '../core.mjs';
+import { deliverLocation, deliverSos, getBrowserLocation, makeLocationPacket, makeSosPacket, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
 
 const status = {
   service: 'rescuenet-field-node', api_version: 1, node_id: 1, device: 'field_node',
@@ -78,4 +78,33 @@ test('SOS gagal jika HTTP gagal atau ACK tidak cocok; hasil tidak dianggap terki
 test('tanpa GPS valid mengikuti payload Android has_gps:false tanpa koordinat', () => {
   const packet = makeSosPacket(user, { ...location, timestamp: 1 }, 'req-no-gps', 1_000_000);
   assert.deepEqual(packet, { ...user, request_id: 'req-no-gps', sos: true, timestamp: 1000, has_gps: false });
+});
+
+test('tracking lokasi mengikuti interval/movement native dan payload mobile wire', async () => {
+  assert.equal(shouldQueueLocation(null, location), true);
+  assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 10_000, lat: location.lat + 0.001 }), false);
+  assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 16_000, lat: location.lat + 0.001 }), true);
+  assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 30_000 }), true);
+  const packet = makeLocationPacket(user, location, 'loc-123', location.timestamp);
+  assert.deepEqual(packet, { ...user, request_id: 'loc-123', timestamp: 1000, has_gps: true,
+    lat: location.lat, lon: location.lon, accuracy: location.accuracy });
+  const calls = [];
+  const fetcher = async (url, options) => {
+    calls.push({ url, options });
+    return calls.length === 1 ? response(status) : response({ service: 'rescuenet-field-node', accepted: true, request_id: 'loc-123', node_id: 1, state: 'queued' }, 202);
+  };
+  const result = await deliverLocation(packet, fetcher);
+  assert.equal(result.ack.request_id, 'loc-123');
+  assert.match(calls[1].url, /\/api\/location$/);
+  assert.equal(calls[1].options.headers['Idempotency-Key'], 'loc-123');
+  assert.deepEqual(JSON.parse(calls[1].options.body), packet);
+});
+
+test('tracking tidak menyebut lokasi terkirim tanpa ACK Field Node yang sesuai', async () => {
+  const packet = makeLocationPacket(user, location, 'loc-no-ack', location.timestamp);
+  let calls = 0;
+  await assert.rejects(deliverLocation(packet, async () => {
+    calls += 1;
+    return calls === 1 ? response(status) : response({ service: 'rescuenet-field-node', accepted: true, request_id: 'different-id' });
+  }), error => error.code === 'ACK');
 });
