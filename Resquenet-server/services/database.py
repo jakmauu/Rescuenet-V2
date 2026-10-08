@@ -223,6 +223,26 @@ def insert_mobile_event(event: Mapping[str, Any], database_path: str | Path | No
                            "lat", "lon", "accuracy", "event_timestamp", "fix_timestamp", "source_node")
         if any(row[name] != event[name] for name in identity_fields):
             raise ValueError("request key conflicts with existing event")
+        conn.execute(
+            """
+            INSERT INTO node_status (
+                node_id, last_seen, last_rssi, last_snr, last_hop, last_pkt_id
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(node_id) DO UPDATE SET
+                last_seen = excluded.last_seen,
+                last_rssi = excluded.last_rssi,
+                last_snr = excluded.last_snr,
+                last_hop = excluded.last_hop
+            """,
+            (
+                event["source_node"],
+                event["received_at"],
+                event.get("rssi"),
+                event.get("snr"),
+                event.get("mesh_hops"),
+                0,
+            ),
+        )
         conn.commit()
         return int(row["id"]), inserted
 

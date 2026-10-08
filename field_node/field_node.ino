@@ -56,7 +56,7 @@
 
 #define XPOWERS_CHIP_AXP2101
 
-#define NODE_ID        1
+#define NODE_ID        2
 #define GATEWAY_ID     0
 #define MAX_HOP        5
 

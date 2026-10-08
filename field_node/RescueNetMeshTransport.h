@@ -59,8 +59,12 @@ public:
       lastStatusUpdate = millis();
     }
     api.meshStatus(true, status.is_synchronized, mesh->GetNodeAddress(), bool(gateway), gateway ? gateway->destination : 0, cachedRouteCount);
-    if (gateway && uint32_t(millis() - lastDiagnostic) > 15000) {
-      Serial.printf("[MESH] gateway found address=%u hops=%u\n", unsigned(gateway->destination), unsigned(gateway->hop_count));
+    if (!lastDiagnostic || uint32_t(millis() - lastDiagnostic) > 10000) {
+      if (gateway) {
+        Serial.printf("[MESH] gateway found address=%u hops=%u synced=%d\n", unsigned(gateway->destination), unsigned(gateway->hop_count), int(status.is_synchronized));
+      } else {
+        Serial.printf("[MESH] searching for gateway... synced=%d routes=%u\n", int(status.is_synchronized), unsigned(cachedRouteCount));
+      }
       lastDiagnostic = millis();
     }
     Received item;

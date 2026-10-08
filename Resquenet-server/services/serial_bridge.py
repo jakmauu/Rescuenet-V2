@@ -331,6 +331,9 @@ class SerialBridge:
             return
         if kind == "firmware":
             LOGGER.info("Gateway firmware: %s", payload)
+            if not self.gateway_ready:
+                self.gateway_ready = True
+                self.publish_gateway_status()
             return
         if kind == "invalid":
             LOGGER.warning("Malformed serial line skipped: %s", payload)
@@ -338,6 +341,7 @@ class SerialBridge:
 
         if kind == "mobile":
             assert isinstance(payload, dict)
+            self.gateway_ready = True
             self._publish_json(config.MQTT_MOBILE_EVENT_TOPIC, payload)
             self.last_packet_at = float(payload["received_at"])
             LOGGER.info("Mobile event request=%s type=%s", payload["request_key"], payload["event_type"])
@@ -346,6 +350,7 @@ class SerialBridge:
 
         report = payload
         assert isinstance(report, dict)
+        self.gateway_ready = True
         self._publish_json(config.MQTT_REPORT_TOPIC, report)
         self.last_packet_at = float(report["received_at"])
         LOGGER.info(

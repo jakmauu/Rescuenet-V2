@@ -50,10 +50,10 @@ void processReceived(const Rx &item) {
   rnwire::Legacy legacy;
   if (rnwire::decodeLegacy(item.data, item.size, legacy)) {
     int hops = routeHops(item.source);
-    if (hops < 1) { Serial.println("[DROP] legacy route unavailable"); return; }
+    int hopDisplay = (hops > 0) ? (hops - 1) : 0;
     // LoRaMesher's application callback provides no measured RSSI/SNR.
     Serial.printf("-,-,%u,%u,%d,5,%.6f,%.6f,%u,%s,%u,%u,%s\n",
-      unsigned(legacy.packetId), unsigned(legacy.node), hops - 1,
+      unsigned(legacy.packetId), unsigned(legacy.node), hopDisplay,
       (legacy.flags & 1) ? legacy.latE6 / 1000000.0 : 0.0,
       (legacy.flags & 1) ? legacy.lonE6 / 1000000.0 : 0.0,
       unsigned(legacy.flags & 1), legacy.condition, unsigned(legacy.count), unsigned((legacy.flags >> 1) & 1), legacy.message);
