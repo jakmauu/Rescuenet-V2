@@ -31,7 +31,7 @@ function setNode(ready, state = '') {
   ui.connectionTitle.textContent = checking ? 'Memeriksa komunikasi Field Node…' : ready ? `Terhubung ke Field Node ${state}` : 'Field Node belum diverifikasi';
   ui.connectionHelp.textContent = ready
     ? `API Field Node merespons dan firmware siap menerima laporan.${user() ? '' : ' Isi nama pelapor di kartu bawah untuk mengaktifkan SOS.'}`
-    : connectionError || 'Hubungkan iPhone ke Wi-Fi Field Node melalui Pengaturan Wi-Fi, lalu kembali ke RescueNet.';
+    : connectionError || 'Hubungkan HP ke Wi-Fi Field Node (RescueNet-Node-X) melalui Pengaturan Wi-Fi, lalu periksa koneksi.';
   ui.check.disabled = checking;
   ui.check.textContent = checking ? 'Memeriksa…' : 'Periksa koneksi';
   ui.sos.disabled = !ready || checking || sending || !user();
@@ -71,16 +71,26 @@ function renderReport() {
 }
 async function checkConnection() {
   if (checking) return false;
-  checking = true; setNode(nodeReady);
+  checking = true;
+  setNode(nodeReady);
   try {
-    const status = await probeNode(); connectionError = ''; setNode(true, status.node_id); return true;
+    const status = await probeNode();
+    connectionError = '';
+    nodeReady = true;
+    setNode(true, status.node_id);
+    message(`Terhubung ke Field Node ${status.node_id}!`);
+    return true;
   } catch (error) {
-    setNode(false);
+    nodeReady = false;
     connectionError = error instanceof NodeApiError
-      ? `${error.message} Jika Wi-Fi sudah benar, browser mungkin membatasi akses HTTPS PWA ke API HTTP lokal.`
+      ? error.message
       : 'Field Node tidak dapat diverifikasi. Periksa Wi-Fi lalu coba lagi.';
+    setNode(false);
     return false;
-  } finally { checking = false; setNode(nodeReady, nodeReady ? ui.pill.textContent.replace('Terhubung · Node ', '') : ''); }
+  } finally {
+    checking = false;
+    setNode(nodeReady, nodeReady ? (ui.pill.textContent.includes('Node ') ? ui.pill.textContent.split('Node ')[1] : '') : '');
+  }
 }
 async function refreshPermissionState() {
   try {

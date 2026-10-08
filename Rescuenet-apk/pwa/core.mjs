@@ -1,6 +1,6 @@
-export const NODE_URL = 'http://192.168.4.1';
+export const NODE_URL = (typeof window !== 'undefined' && window.location.hostname === '192.168.4.1') ? '' : 'http://192.168.4.1';
 export const LOCATION_MAX_AGE_MS = 120_000;
-export const REQUEST_TIMEOUT_MS = 6_000;
+export const REQUEST_TIMEOUT_MS = 3_000;
 
 export class NodeApiError extends Error {
   constructor(message, code = 'NODE_ERROR') { super(message); this.name = 'NodeApiError'; this.code = code; }
@@ -24,8 +24,11 @@ async function fetchWithTimeout(fetcher, url, options, timeoutMs) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try { return await fetcher(url, { ...options, signal: controller.signal }); }
   catch (error) {
-    if (error?.name === 'AbortError') throw new NodeApiError('Waktu tunggu Field Node habis. Periksa Wi-Fi lalu coba lagi.', 'TIMEOUT');
-    throw new NodeApiError('Field Node tidak dapat dijangkau atau browser memblokir akses jaringan lokal. Periksa Wi-Fi dan dukungan browser.', 'NETWORK');
+    if (error?.name === 'AbortError') throw new NodeApiError('Waktu tunggu Field Node habis (timeout). Pastikan sudah terhubung ke Wi-Fi RescueNet-Node.', 'TIMEOUT');
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+      throw new NodeApiError('Browser membatasi koneksi HTTP lokal dari HTTPS GitHub Pages (Mixed Content). Sambungkan Wi-Fi ke RescueNet-Node-X lalu buka http://192.168.4.1 langsung di browser, atau gunakan aplikasi APK.', 'NETWORK');
+    }
+    throw new NodeApiError('Field Node tidak dapat dijangkau. Pastikan Wi-Fi terhubung ke RescueNet-Node.', 'NETWORK');
   } finally { clearTimeout(timer); }
 }
 

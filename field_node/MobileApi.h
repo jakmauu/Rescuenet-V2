@@ -17,12 +17,15 @@ class MobileApi {
   void reply(int code, const JsonDocument &doc) {
     char response[512];
     if (measureJson(doc) >= sizeof(response)) { error(503, "response_unavailable"); return; }
-    serializeJson(doc, response, sizeof(response)); server.send(code, "application/json", response);
+    serializeJson(doc, response, sizeof(response));
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(code, "application/json", response);
   }
   void error(int code, const char *reason) {
     StaticJsonDocument<256> doc;
     doc["service"] = "rescuenet-field-node"; doc["accepted"] = false; doc["error"] = reason;
     char response[512]; serializeJson(doc, response, sizeof(response));
+    server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(code, "application/json", response);
     Serial.printf("[MOBILE API] rejected: %s\n", reason);
   }

@@ -81,6 +81,8 @@ inline Result parseHeaders(char *header, HttpHeaders &out) {
   bool status = strcmp(out.path, "/api/status") == 0;
   bool post = strcmp(out.path, "/api/location") == 0 || strcmp(out.path, "/api/sos") == 0;
   if (!status && !post) return Result(404, "api_not_found");
+  bool isOptions = strcmp(out.method, "OPTIONS") == 0;
+  if (isOptions) return Result{};
   if ((status && strcmp(out.method, "GET")) || (post && strcmp(out.method, "POST"))) return Result(405, "method_not_allowed");
   if (post && !lengthFound) return Result(400, "missing_content_length");
   if (post && !typeFound) return Result(415, "unsupported_media_type");

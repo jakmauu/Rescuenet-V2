@@ -24,20 +24,34 @@ class MobileWebServer : public WebServer {
     resetResponse();
     char response[192];
     snprintf(response, sizeof(response), "{\"service\":\"rescuenet-field-node\",\"accepted\":false,\"error\":\"%s\"}", reason);
-    sendHeader("Connection", "close"); send(code, "application/json", response);
+    sendHeader("Connection", "close");
+    sendHeader("Access-Control-Allow-Origin", "*");
+    sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    sendHeader("Access-Control-Allow-Headers", "Accept, Content-Type, Idempotency-Key");
+    send(code, "application/json", response);
     release();
   }
   void dispatch() {
     body[received] = 0;
     _currentUri = incoming.path;
-    _currentMethod = strcmp(incoming.method, "GET") == 0 ? HTTP_GET : HTTP_POST;
+    _currentMethod = strcmp(incoming.method, "GET") == 0 ? HTTP_GET : strcmp(incoming.method, "OPTIONS") == 0 ? HTTP_OPTIONS : HTTP_POST;
     _currentVersion = 1;
+    resetResponse();
+    sendHeader("Connection", "close");
+    sendHeader("Access-Control-Allow-Origin", "*");
+    sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    sendHeader("Access-Control-Allow-Headers", "Accept, Content-Type, Idempotency-Key");
+    sendHeader("Access-Control-Max-Age", "86400");
+    if (strcmp(incoming.method, "OPTIONS") == 0) {
+      send(204, "text/plain", "");
+      release();
+      return;
+    }
     // The normal route registry still owns endpoint dispatch.
     _currentHandler = nullptr;
     for (RequestHandler *handler = _firstHandler; handler; handler = handler->next()) {
       if (handler->canHandle(*this, _currentMethod, _currentUri)) { _currentHandler = handler; break; }
     }
-    resetResponse(); sendHeader("Connection", "close");
     _handleRequest();
     release();
   }
