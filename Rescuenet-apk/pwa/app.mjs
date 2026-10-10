@@ -1,5 +1,5 @@
 import {
-  createRequestId, getBrowserLocation, locationAgeMs, makeLocationPacket, makeSosPacket,
+  createRequestId, DEFAULT_NODE_URL, getBrowserLocation, locationAgeMs, makeLocationPacket, makeSosPacket,
   nodeApiReadiness, normalizeNodeOrigin, normalizeProfile, NodeApiError, probeNode,
   transmitLocation, transmitSos,
 } from './core.mjs';
@@ -24,7 +24,7 @@ const safeStorage = {
 const state = {
   screen: 'splash', onboardingStep: 0, checking: false, nodeReady: false, nodeDetails: null,
   connectionState: 'UNVERIFIED', connectionError: '', checkController: null, checkSequence: 0,
-  connectionRetryTimer: null, connectionAttempts: 0, splashTimer: null,
+  connectionRetryTimer: null, connectionAttempts: 0,
   sendingSosId: null, tracking: safeStorage.read(KEY.tracking) === true,
   consent: safeStorage.read(KEY.consent) === true, fix: safeStorage.read(KEY.location),
   events: restoreSosEvents(), watchId: null, refreshTimer: null, pollBusy: false, toastTimer: null,
@@ -59,9 +59,9 @@ function pendingRecord() {
 }
 function pending() { return pendingRecord(); }
 function nodeUrl() {
-  const raw = safeStorage.read(KEY.nodeUrl) || 'http://192.168.4.1';
-  try { const parsed = new URL(raw); return parsed.origin === location.origin ? '' : parsed.origin; }
-  catch { return 'http://192.168.4.1'; }
+  const raw = safeStorage.read(KEY.nodeUrl) || DEFAULT_NODE_URL;
+  try { const parsed = new URL(normalizeNodeOrigin(raw)); return parsed.origin === location.origin ? '' : parsed.origin; }
+  catch { return DEFAULT_NODE_URL; }
 }
 function toast(text) {
   byId.toast.textContent = text; byId.toast.classList.add('visible'); clearTimeout(state.toastTimer);
@@ -77,12 +77,12 @@ function meshText(info) {
   return `Gateway ditemukan${routes}${queued}`;
 }
 function statusLabel() {
-  return ({ UNVERIFIED: 'Belum diverifikasi', CHECKING: 'Memeriksa…', FIELD_CONNECTED: 'Field Node siap',
-    FIELD_API_NOT_READY: 'API ada · node belum siap', FIELD_UNREACHABLE: 'Tidak dapat dijangkau',
-    API_INCOMPATIBLE: 'API tidak kompatibel', BROWSER_BLOCKED: 'Mungkin dibatasi browser', RECOVERING: 'Mencoba pulih…' })[state.connectionState] || 'Belum terhubung';
+  return ({ UNVERIFIED: 'Belum diperiksa', CHECKING: 'Memeriksa…', FIELD_CONNECTED: 'Terhubung ke Field Node',
+    FIELD_API_NOT_READY: 'Terhubung · pengiriman belum siap', FIELD_UNREACHABLE: 'API belum dapat diakses',
+    API_INCOMPATIBLE: 'API tidak kompatibel', BROWSER_BLOCKED: 'PWA perlu konteks HTTPS', RECOVERING: 'Mencoba pulih…' })[state.connectionState] || 'Belum terhubung';
 }
 function connectionRetryNeeded() {
-  return state.tracking || state.events.some(event=>['SENDING','UNKNOWN','FAILED'].includes(event.status));
+  return state.tracking || state.events.some(event=>['QUEUED_LOCAL','SENDING','UNKNOWN','FAILED'].includes(event.status));
 }
 function scheduleConnectionRetry() {
   if(state.connectionRetryTimer!==null||!connectionRetryNeeded()||document.visibilityState!=='visible')return;
@@ -96,13 +96,15 @@ function clearConnectionRetry() {
 }
 function renderConnection() {
   const ready = state.nodeReady;
-  byId['connection-pill'].className = `status-pill ${state.checking ? 'status-checking' : ready ? 'status-online' : 'status-offline'}`;
-  byId['connection-pill'].textContent = state.checking ? 'Memeriksa…' : ready ? `Node ${state.nodeDetails?.node_id ?? '?'}` : statusLabel();
-  const title = state.checking ? 'Memeriksa Field Node…' : ready ? `Field Node ${state.nodeDetails.node_id} terverifikasi` : statusLabel();
-  const help = ready ? 'API menerima permintaan. Mesh/Gateway tetap ditampilkan terpisah; ACK PWA hanya membuktikan penerimaan Field Node.'
-    : state.connectionError || 'Hubungkan Wi-Fi Field Node, kembali ke aplikasi, lalu periksa koneksi.';
+  const reached = !!state.nodeDetails;
+  byId['connection-pill'].className = `status-pill ${state.checking ? 'status-checking' : reached ? 'status-online' : 'status-offline'}`;
+  byId['connection-pill'].textContent = state.checking ? 'Memeriksa…' : reached ? `Node ${state.nodeDetails.node_id}` : statusLabel();
+  const title = state.checking ? 'Memeriksa Field Node…' : reached ? `Terhubung ke Field Node ${state.nodeDetails.node_id}` : statusLabel();
+  const help = reached ? (ready ? 'API dapat diakses. Pengiriman ke Gateway dan petugas dikonfirmasi secara terpisah.'
+    : 'API dapat diakses, tetapi Field Node belum siap menerima kiriman. Coba lagi sebentar.')
+    : state.connectionError || 'Sambungkan ke Wi-Fi RescueNet, pilih tetap terhubung tanpa internet, lalu tekan Periksa koneksi.';
   for (const [id, value] of [['connection-title',title],['home-connection-title',title],['connection-help',help],['home-connection-help',help],
-    ['api-state',ready?'Siap':statusLabel()],['home-api-state',ready?'Siap':statusLabel()],['mesh-state',meshText(state.nodeDetails)],['home-mesh-state',meshText(state.nodeDetails)],['status-api',ready?'Siap':statusLabel()],['status-mesh',meshText(state.nodeDetails)]]) {
+    ['api-state',reached?'Terhubung':statusLabel()],['home-api-state',reached?'Terhubung':statusLabel()],['mesh-state',meshText(state.nodeDetails)],['home-mesh-state',meshText(state.nodeDetails)],['status-api',reached?'Terhubung':statusLabel()],['status-mesh',meshText(state.nodeDetails)]]) {
     if (byId[id]) byId[id].textContent = value;
   }
   for (const id of ['check-button','home-check-button']) if (byId[id]) { byId[id].disabled = state.checking; byId[id].textContent = state.checking ? 'Memeriksa…' : 'Periksa koneksi'; }
@@ -121,15 +123,9 @@ function showScreen(name) {
 }
 function beginOnboarding(step = 0) { state.onboardingStep = step; showScreen('onboarding'); renderOnboarding(); }
 function finishOnboarding() { safeStorage.write(KEY.onboarded, true); showScreen('home'); renderAll(); }
-function scheduleSplashRoute() {
-  if (state.screen !== 'splash' || state.splashTimer !== null) return;
-  state.splashTimer = setTimeout(() => {
-    state.splashTimer = null;
-    if (state.screen !== 'splash') return;
-    const firstRun = !profile() || safeStorage.read(KEY.onboarded) !== true;
-    if (firstRun) beginOnboarding(profile() ? 2 : 0);
-    else showScreen('home');
-  }, 180);
+function openInitialScreen() {
+  if (!profile() || safeStorage.read(KEY.onboarded) !== true) beginOnboarding(profile() ? 2 : 0);
+  else showScreen('home');
 }
 function renderOnboarding() {
   const step = state.onboardingStep;
@@ -168,16 +164,21 @@ async function advanceOnboarding() {
 
 async function checkConnection() {
   if (state.checking || document.visibilityState !== 'visible') return false;
+  if (!window.isSecureContext) {
+    state.nodeReady=false; state.nodeDetails=null; state.connectionState='BROWSER_BLOCKED';
+    state.connectionError='Buka RescueNet yang terpasang dari Home Screen. Aplikasi memerlukan halaman HTTPS untuk mengakses Field Node.';
+    renderConnection(); renderOnboarding(); return false;
+  }
   state.checking = true; state.connectionState='CHECKING'; state.connectionError='';
   const sequence = ++state.checkSequence; state.checkController?.abort(); state.checkController = new AbortController();
   renderConnection(); renderOnboarding();
   try {
-    const info = await probeNode(fetch, 3500, nodeUrl(), state.checkController.signal);
+    const info = await probeNode(fetch, 10_000, nodeUrl(), state.checkController.signal);
     if (sequence !== state.checkSequence) return false;
     state.nodeDetails=info;
     state.connectionState=nodeApiReadiness(info);
     state.nodeReady=state.connectionState === 'FIELD_CONNECTED';
-    if (!state.nodeReady) state.connectionError='API dapat dijangkau, tetapi radio/antrian atau mesh belum siap. Periksa status pada Field Node.';
+    if (!state.nodeReady) state.connectionError='API dapat dijangkau, tetapi pengiriman belum siap.';
     if(state.nodeReady)clearConnectionRetry();else scheduleConnectionRetry();
     renderConnection(); if (state.nodeReady) scheduler.resume();
     return state.nodeReady;
@@ -198,12 +199,12 @@ const scheduler = new LocationScheduler({
   readLatest: () => safeStorage.read(KEY.latestLocation), writeLatest: value => safeStorage.write(KEY.latestLocation,value),
   readLastAccepted: () => safeStorage.read(KEY.acceptedLocation), writeLastAccepted: value => safeStorage.write(KEY.acceptedLocation,value),
   makePacket: fix => makeLocationPacket(profile(),fix,createRequestId()),
-  send: packet => transmitLocation(packet,fetch,3500,nodeUrl()),
+  send: packet => transmitLocation(packet,fetch,10_000,nodeUrl()),
   enabled: () => state.tracking && state.consent && state.nodeReady && document.visibilityState==='visible',
   intervalMs: (Number(safeStorage.read(KEY.interval)) || 120) * 1000,
   minimumSpacingMs: 60_000,
   onState(kind,detail) {
-    if (kind==='accepted') toast('Field Node menerima antrean lokasi. Server belum terkonfirmasi.');
+    if (kind==='accepted') toast('Lokasi diterima Field Node. Server belum terkonfirmasi.');
     if (kind==='stale') toast('Fix tertunda sudah terlalu lama; lokasi lama tidak dikirim.');
     if (kind==='exhausted') toast('Percobaan lokasi mencapai batas. Periksa koneksi lalu pilih coba lagi.');
     if (['retry_wait','exhausted'].includes(kind) && detail instanceof Error) {
@@ -242,15 +243,15 @@ function renderLocation() {
   byId['tracking-button'].textContent=state.tracking?'Hentikan berbagi lokasi':'Mulai bagikan lokasi';
   byId['tracking-badge'].textContent=state.tracking?'Berbagi aktif':'Berhenti'; byId['tracking-badge'].className=`status-pill ${state.tracking?'status-online':'status-offline'}`;
   const p=pending(); const accepted=safeStorage.read(KEY.acceptedLocation);
-  byId['tracking-status'].textContent=!state.tracking?'Berbagi berhenti.':document.visibilityState!=='visible'?'Berbagi dijeda: PWA tidak aktif; iOS dapat menangguhkan GPS.':p?`Lokasi menunggu ACK · percobaan ${p.attempts}/${5}.`:accepted?`Field Node menerima lokasi ${new Date(accepted.acceptedAt).toLocaleTimeString('id-ID')}. Ini bukan ACK server.`:'Menunggu fix GPS yang memenuhi batas akurasi dan interval.';
+  byId['tracking-status'].textContent=!state.tracking?'Berbagi berhenti.':document.visibilityState!=='visible'?'Berbagi dijeda: PWA tidak aktif; iOS dapat menangguhkan GPS.':p?.attempts>=5?'Lokasi gagal dikirim. Tekan Coba kirim lagi.':p?`Lokasi menunggu dikirim · percobaan ${p.attempts}/${5}.`:accepted?`Field Node menerima lokasi ${new Date(accepted.acceptedAt).toLocaleTimeString('id-ID')}. Server belum terkonfirmasi.`:'Menunggu fix GPS yang memenuhi batas akurasi dan interval.';
   byId['retry-location-button'].classList.toggle('hidden',!p || !state.tracking);
   renderLocationDelivery(p,accepted);
   if (state.screen==='map') renderMap();
 }
 function renderLocationDelivery(p,accepted) {
-  const label=p?'Menunggu Field Node':accepted?'Diterima Field Node':'Belum dikirim';
+  const label=p?.attempts>=5?'Gagal dikirim':p?'Menunggu dikirim':accepted?'Diterima Field Node':'Belum dikirim';
   byId['location-delivery-status'].textContent=label;
-  byId['location-delivery-detail'].textContent=p?`Retry ${p.attempts}/${5}; gateway dan server belum dikonfirmasi.`:accepted?`ACK dari Node ${accepted.nodeId??'?'} pukul ${new Date(accepted.acceptedAt).toLocaleTimeString('id-ID')}. Server belum dikonfirmasi.`:'GPS lokal tidak berarti paket sudah dikirim.';
+  byId['location-delivery-detail'].textContent=p?`${p.lastError ? `${p.lastError} ` : ''}Percobaan ${p.attempts}/${5}; server belum dikonfirmasi.`:accepted?`Diterima Node ${accepted.nodeId??'?'} pukul ${new Date(accepted.acceptedAt).toLocaleTimeString('id-ID')}. Server belum dikonfirmasi.`:'GPS lokal tidak berarti paket sudah dikirim.';
 }
 function renderMap() {
   const fix=state.fix; const age=locationAgeMs(fix); const valid=fix&&age<=120_000&&Number.isFinite(fix.lat)&&Number.isFinite(fix.lon);
@@ -265,17 +266,17 @@ function renderMap() {
 function renderSos() {
   const current=activeSos();
   if (!current) { byId['report-status'].textContent='Belum ada SOS aktif'; byId['report-detail'].textContent='Belum ada laporan SOS dari perangkat ini.'; byId['home-report-status'].textContent='Belum ada SOS aktif'; byId['home-report-detail'].textContent='Status pengiriman akan muncul di sini.'; byId['retry-button'].classList.add('hidden'); byId['sos-history'].replaceChildren(); return; }
-  const labels={SENDING:'Sedang mengirim ke Field Node',FIELD_ACCEPTED:'Diterima Field Node',UNKNOWN:'Status belum pasti',FAILED:'Belum terkonfirmasi'};
+  const labels={QUEUED_LOCAL:'Menunggu dikirim',SENDING:'Sedang mengirim ke Field Node',FIELD_ACCEPTED:'Diterima Field Node',UNKNOWN:'Status belum pasti',FAILED:'Gagal dikirim'};
   const detail=current.status==='FIELD_ACCEPTED'?`Field Node ${current.nodeId??'?'} mengakui antrean ${new Date(current.deliveredAt).toLocaleTimeString('id-ID')}. Gateway/server belum mengonfirmasi.`:current.error||`ID laporan ${current.id} disimpan lokal. Retry akan memakai ID yang sama.`;
   byId['report-status'].textContent=labels[current.status]||'Status belum diketahui'; byId['report-detail'].textContent=detail;
   byId['home-report-status'].textContent=labels[current.status]||'Status belum diketahui'; byId['home-report-detail'].textContent=detail;
-  byId['retry-button'].classList.toggle('hidden',!['FAILED','UNKNOWN'].includes(current.status));
+  byId['retry-button'].classList.toggle('hidden',!['QUEUED_LOCAL','FAILED','UNKNOWN'].includes(current.status));
   byId['sos-history'].replaceChildren();
   for(const event of [...state.events].reverse()) {
     const row=document.createElement('div'); row.className='sos-history-row';
     const copy=document.createElement('span'); copy.textContent=`${new Date(event.createdAt).toLocaleTimeString('id-ID')} · ${labels[event.status]||event.status} · ${event.id.slice(0,8)}`;
     row.append(copy);
-    if(['FAILED','UNKNOWN'].includes(event.status)) { const retry=document.createElement('button'); retry.type='button'; retry.className='text-button'; retry.textContent='Retry'; retry.addEventListener('click',()=>void retrySos(event.id)); row.append(retry); }
+    if(['QUEUED_LOCAL','FAILED','UNKNOWN'].includes(event.status)) { const retry=document.createElement('button'); retry.type='button'; retry.className='text-button'; retry.textContent='Coba lagi'; retry.addEventListener('click',()=>void retrySos(event.id)); row.append(retry); }
     byId['sos-history'].append(row);
   }
 }
@@ -325,7 +326,7 @@ function toggleTracking() {
   if(state.tracking){state.tracking=false;safeStorage.write(KEY.tracking,false);stopTracking({discard:true});renderLocation();toast('Berbagi lokasi dihentikan. Antrean lokasi di perangkat dibersihkan; data yang sudah diterima node tidak dapat ditarik.');return;}
   if(!profile()){beginOnboarding(1);toast('Daftarkan identitas terlebih dahulu.');return;}
   if(!state.consent){byId['location-consent'].focus();toast('Centang persetujuan sebelum mengaktifkan berbagi.');return;}
-  if(!window.isSecureContext){toast('Live GPS browser memerlukan PWA HTTPS; koneksi HTTPS ke API HTTP node tetap bergantung pada kebijakan iOS.');return;}
+  if(!window.isSecureContext){toast('Live GPS memerlukan PWA yang dibuka lewat HTTPS.');return;}
   state.tracking=true;safeStorage.write(KEY.tracking,true);startTracking();void checkConnection();
 }
 function saveProfile() {
@@ -346,26 +347,27 @@ async function sendSos({retry=false,eventId=null}={}) {
   if(state.sendingSosId||!profile())return;
   let event=eventId?state.events.find(item=>item.id===eventId):activeSos();
   let locallyPersisted=true;
-  if(retry){if(!event||!['FAILED','UNKNOWN'].includes(event.status))return;}
+  if(retry){if(!event||!['QUEUED_LOCAL','FAILED','UNKNOWN'].includes(event.status))return;}
   else {
-    const unresolved=state.events.find(item=>['SENDING','UNKNOWN','FAILED'].includes(item.status));
+    const unresolved=state.events.find(item=>['QUEUED_LOCAL','SENDING','UNKNOWN','FAILED'].includes(item.status));
     if(unresolved&&!confirm(`SOS ${unresolved.id} belum terkonfirmasi. Buat SOS baru juga? SOS lama tetap tersimpan dan tidak akan dihapus.`))return;
     if(state.events.length>=10){const evict=state.events.findIndex(item=>item.status==='FIELD_ACCEPTED');if(evict>=0)state.events.splice(evict,1);else{toast('Riwayat SOS lokal penuh (maksimum 10) dan semuanya belum terkonfirmasi. Catat ID laporan sebelum membuat SOS baru.');return;}}
     const packet=makeSosPacket(profile(),state.fix,createRequestId());
-    event={id:packet.request_id,packet,status:'UNKNOWN',createdAt:Date.now(),error:null};
+    event={id:packet.request_id,packet,status:'QUEUED_LOCAL',createdAt:Date.now(),error:null};
     state.events.push(event); locallyPersisted=persistSosEvents();
   }
-  if(!state.nodeReady){event.status='UNKNOWN';event.error=locallyPersisted?'SOS tersimpan pada perangkat ini, tetapi belum dikirim ke Field Node. Hubungkan Wi-Fi node dan pilih Retry.':'Penyimpanan lokal gagal dan Field Node offline; laporan ini hanya ada selama halaman tetap terbuka.';persistSosEvents();renderSos();showScreen('status');toast(event.error);return;}
+  if(!state.nodeReady){event.status='QUEUED_LOCAL';event.error=locallyPersisted?'SOS tersimpan di iPhone dan menunggu dikirim. Sambungkan ke Wi-Fi RescueNet, lalu pilih Coba kirim ulang.':'Penyimpanan lokal gagal; laporan ini hanya ada selama aplikasi tetap terbuka.';persistSosEvents();renderSos();showScreen('status');toast(event.error);return;}
   state.sendingSosId=event.id;event.status='SENDING';event.error=null;persistSosEvents();renderSos();renderConnection();
   try {
-    const ack=await transmitSos(event.packet,fetch,3500,nodeUrl());
+    const ack=await transmitSos(event.packet,fetch,10_000,nodeUrl());
     event.status='FIELD_ACCEPTED';event.nodeId=ack.node_id??null;event.deliveredAt=Date.now();event.error=null;
     persistSosEvents();
     toast('Field Node mengakui antrean SOS. Gateway/server belum terkonfirmasi.');
   } catch(error) {
-    event.status='UNKNOWN';event.error=`Belum ada ACK yang cocok. Bisa jadi request sudah diterima tetapi balasan hilang. Retry memakai ID yang sama. (${error.message})`;
+    event.status=error.code==='HTTP'?'FAILED':'UNKNOWN';
+    event.error=event.status==='FAILED'?`Field Node menolak kiriman. ${error.message} Coba lagi dengan ID yang sama.`:`Belum ada ACK yang cocok. Kiriman mungkin sudah diterima; coba lagi dengan ID yang sama. (${error.message})`;
     if(['NETWORK','TIMEOUT','BROWSER_BLOCKED'].includes(error.code)){state.nodeReady=false;state.connectionState=error.code==='BROWSER_BLOCKED'?'BROWSER_BLOCKED':'FIELD_UNREACHABLE';state.connectionError=error.message;}
-    persistSosEvents();scheduleConnectionRetry();
+    persistSosEvents();scheduleConnectionRetry();toast(event.error);
   } finally { state.sendingSosId=null;renderSos();renderConnection(); }
 }
 function saveNodeAddress() {
@@ -394,18 +396,17 @@ byId['onboarding-skip'].addEventListener('click',()=>{if(state.onboardingStep===
 byId['permission-button'].addEventListener('click',()=>void requestLocation());
 byId['onboarding-location-consent'].addEventListener('change',()=>{state.consent=byId['onboarding-location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['onboarding-location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan; lokasi tidak akan dibagikan.');}});
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){scheduleSplashRoute();void checkConnection();startTracking();scheduler.resume();}
+  if(document.visibilityState==='visible'){void checkConnection();startTracking();scheduler.resume();}
   else{stopTracking();renderLocation();}
 });
-window.addEventListener('pagehide',()=>{stopTracking();clearTimeout(state.toastTimer);clearTimeout(state.splashTimer);state.splashTimer=null;clearConnectionRetry();state.checkController?.abort();});
-window.addEventListener('pageshow',()=>{if(document.visibilityState==='visible'){scheduleSplashRoute();void checkConnection();startTracking();}});
+window.addEventListener('pagehide',()=>{stopTracking();clearTimeout(state.toastTimer);clearConnectionRetry();state.checkController?.abort();});
+window.addEventListener('pageshow',()=>{if(document.visibilityState==='visible'){void checkConnection();startTracking();}});
 
-byId['node-url-input'].value=safeStorage.read(KEY.nodeUrl)||'http://192.168.4.1';
+byId['node-url-input'].value=nodeUrl()||location.origin;
 byId['name-input'].value=profile()?.name||'';byId['role-input'].value=profile()?.role||'survivor';byId['team-input'].value=profile()?.team||'';
 if(state.events.at(-1)?.status==='SENDING'){state.events.at(-1).status='UNKNOWN';state.events.at(-1).error='Aplikasi ditutup sebelum ACK diterima. Retry memakai ID yang sama.';persistSosEvents();}
 renderAll();
-showScreen('splash');
-scheduleSplashRoute();
+openInitialScreen();
 void checkConnection();
 if(state.tracking&&state.consent)startTracking();
 if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('./service-worker.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});

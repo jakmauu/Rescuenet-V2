@@ -1,7 +1,7 @@
-export const DEFAULT_NODE_URL = 'http://192.168.4.1';
+export const DEFAULT_NODE_URL = 'https://192.168.4.1';
 export const NODE_URL = (typeof window !== 'undefined' && window.location.hostname === '192.168.4.1') ? '' : DEFAULT_NODE_URL;
 export const LOCATION_MAX_AGE_MS = 120_000;
-export const REQUEST_TIMEOUT_MS = 3_000;
+export const REQUEST_TIMEOUT_MS = 10_000;
 export const TRACKING_INTERVAL_MS = 30_000;
 export const MIN_MOVEMENT_INTERVAL_MS = 15_000;
 export const MOVEMENT_THRESHOLD_METERS = 25;
@@ -39,11 +39,10 @@ async function fetchWithTimeout(fetcher, url, options, timeoutMs) {
   try { return await fetcher(url, { ...options, signal: controller.signal }); }
   catch (error) {
     if (externalSignal?.aborted) throw new NodeApiError('Pemeriksaan koneksi dibatalkan.', 'CANCELLED');
-    if (controller.signal.aborted) throw new NodeApiError('Waktu tunggu Field Node habis. Pastikan terhubung ke Wi-Fi RescueNet-Node.', 'TIMEOUT');
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
-      throw new NodeApiError('Browser tidak dapat menyelesaikan permintaan HTTP lokal dari origin HTTPS. Penyebabnya bisa berupa jaringan, mixed content, CORS, atau kebijakan akses jaringan lokal; PWA tidak dapat memastikan penyebab tunggal. CORS saja tidak melewati batas mixed content.', 'BROWSER_BLOCKED');
-    }
-    throw new NodeApiError('Field Node tidak dapat dijangkau. Pastikan Wi-Fi terhubung ke RescueNet-Node.', 'NETWORK');
+    if (controller.signal.aborted) throw new NodeApiError('API Field Node belum membalas. Pastikan iPhone tetap tersambung ke Wi-Fi RescueNet, lalu coba lagi.', 'TIMEOUT');
+    // Fetch intentionally exposes most TLS, captive-network, CORS, and offline
+    // failures as the same TypeError. Do not claim the certificate is the cause.
+    throw new NodeApiError('API Field Node belum dapat diakses. Periksa Wi-Fi RescueNet dan coba lagi. Safari tidak memberi rincian penyebab.', 'NETWORK');
   } finally {
     clearTimeout(timeout);
     externalSignal?.removeEventListener('abort', abortFromCaller);
@@ -53,7 +52,7 @@ async function fetchWithTimeout(fetcher, url, options, timeoutMs) {
 async function readJson(response) {
   if (!response.ok) throw new NodeApiError(`Field Node menolak permintaan (HTTP ${response.status}).`, 'HTTP');
   if (!(response.headers?.get?.('content-type') ?? '').toLowerCase().includes('application/json')) {
-    throw new NodeApiError('Field Node membalas bukan JSON. API mobile tidak terverifikasi.', 'INCOMPATIBLE');
+    throw new NodeApiError('Alamat membalas halaman portal/HTML, bukan JSON API. Pastikan alamat HTTPS Field Node benar dan portal captive sudah ditutup sebelum kembali ke PWA.', 'INCOMPATIBLE');
   }
   try { return await response.json(); }
   catch { throw new NodeApiError('Balasan JSON Field Node tidak valid.', 'INCOMPATIBLE'); }
@@ -67,7 +66,7 @@ export async function probeNode(fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS,
   }, timeoutMs);
   const data = await readJson(response);
   if (!verifyNodeStatus(data)) {
-    throw new NodeApiError('API Field Node belum kompatibel atau node sedang tidak siap.', 'INCOMPATIBLE');
+    throw new NodeApiError('Balasan API Field Node tidak sesuai dengan format RescueNet.', 'INCOMPATIBLE');
   }
   return data;
 }
@@ -143,10 +142,10 @@ export function locationAgeMs(location, now = Date.now()) {
 export function normalizeNodeOrigin(value) {
   let parsed;
   try { parsed = new URL(typeof value === 'string' ? value.trim() : ''); }
-  catch { throw new NodeApiError('Alamat harus berupa URL HTTP/HTTPS yang valid.', 'NODE_URL'); }
-  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password
+  catch { throw new NodeApiError('Alamat harus berupa URL HTTPS yang valid.', 'NODE_URL'); }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password
     || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-    throw new NodeApiError('Masukkan hanya origin, misalnya http://192.168.4.1.', 'NODE_URL');
+    throw new NodeApiError('Masukkan hanya origin HTTPS, misalnya https://192.168.4.1.', 'NODE_URL');
   }
   return parsed.origin;
 }

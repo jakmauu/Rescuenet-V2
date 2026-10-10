@@ -15,8 +15,12 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
   }
   for (const tab of ['home','map','status','profile']) assert.match(html, new RegExp(`data-screen="${tab}"`));
   assert.match(app, /document\.querySelectorAll\('\.bottom-nav button'\)/);
-  assert.match(app, /function scheduleSplashRoute\(\)/);
-  assert.match(app, /pageshow'.*scheduleSplashRoute\(\)/);
+  assert.match(html, /id="home-screen"[^>]*class="screen"[^>]*>/);
+  assert.match(html, /id="splash-screen"[^>]*hidden/);
+  assert.ok(app.lastIndexOf('openInitialScreen();') < app.lastIndexOf('void checkConnection();'),
+    'the first screen must render before the network check starts');
+  assert.match(app, /QUEUED_LOCAL:'Menunggu dikirim'/);
+  assert.match(app, /FIELD_ACCEPTED:'Diterima Field Node'/);
 });
 
 test('service worker caches the scheduler dependency and does not cache API responses', () => {

@@ -19,10 +19,10 @@
       <header class="brand-row">
         <img class="brand-logo" src="./assets/rescuenet-logo.png" alt="" width="46" height="46" />
         <div class="brand-copy"><strong>RescueNet</strong><span>BANTUAN LAPANGAN</span></div>
-        <span id="connection-pill" class="status-pill status-offline" role="status">Belum terhubung</span>
+        <span id="connection-pill" class="status-pill status-offline" role="status">Belum diperiksa</span>
       </header>
 
-      <section id="splash-screen" class="screen splash-screen" aria-label="Memuat RescueNet">
+      <section id="splash-screen" class="screen splash-screen" aria-label="Memuat RescueNet" hidden>
         <div class="onboarding-mark"><img src="./assets/rescuenet-logo.png" alt="" /></div>
         <h1>RescueNet</h1><p role="status">Menyiapkan bantuan darurat…</p>
       </section>
@@ -43,12 +43,12 @@
         </div>
         <div id="wifi-guide" class="card guide-card" hidden>
           <strong>Hubungkan iPhone ke Field Node</strong>
-          <ol><li>Buka Pengaturan iPhone → Wi-Fi.</li><li>Pilih jaringan RescueNet-Node1 (atau node yang digunakan).</li><li>Jika diminta, tetap terhubung meski Wi-Fi tidak memiliki internet.</li></ol>
-          <p class="fine-print">PWA tidak dapat membaca SSID Wi-Fi iPhone secara langsung.</p>
+          <ol><li>Buka RescueNet sekali saat masih ada internet, lalu tambahkan ke Home Screen.</li><li>Sambungkan iPhone ke Wi-Fi RescueNet-Node yang digunakan.</li><li>Ikuti halaman sambutan Wi-Fi. Pilih <strong>Tetap Terhubung / Tanpa Internet</strong> jika muncul.</li><li>Kembali ke RescueNet, lalu tekan <strong>Periksa koneksi</strong>.</li></ol>
+          <p class="fine-print">Jika halaman sambutan tidak muncul, buka <code>http://192.168.4.1</code> di Safari. Setelah tersambung, tutup halaman sambutan.</p>
         </div>
         <div id="verify-guide" class="card guide-card" hidden>
           <strong id="connection-title">Field Node belum diverifikasi</strong>
-          <p id="connection-help">Hubungkan Wi-Fi node dahulu, lalu periksa koneksi.</p>
+          <p id="connection-help">Sambungkan ke Wi-Fi RescueNet, lalu tekan Periksa koneksi.</p>
           <div class="connection-details"><span>API Field Node</span><strong id="api-state">Belum diverifikasi</strong><span>Mesh / Gateway</span><strong id="mesh-state">Belum diketahui</strong></div>
           <button id="check-button" class="button button-secondary" type="button">Periksa koneksi</button>
         </div>
@@ -66,17 +66,17 @@
         <p class="fine-print">Identitas disimpan pada perangkat ini dan bukan autentikasi akun.</p>
       </section>
 
-      <section id="home-screen" class="screen" aria-labelledby="home-title" hidden>
+      <section id="home-screen" class="screen" aria-labelledby="home-title">
         <div class="page-heading"><p class="eyebrow">PUSAT BANTUAN</p><h1 id="home-title">Tetap terhubung.</h1><p id="welcome-user" class="lead">Siapkan koneksi dan identitas RescueNet Anda.</p></div>
         <section id="connection-panel" class="card connection-card" aria-live="polite">
-          <div class="connection-copy"><strong id="home-connection-title">Field Node belum diverifikasi</strong><p id="home-connection-help">Hubungkan ke Wi-Fi Field Node lalu periksa koneksi.</p></div>
+          <div class="connection-copy"><strong id="home-connection-title">Belum diperiksa</strong><p id="home-connection-help">Sambungkan ke Wi-Fi RescueNet, lalu tekan Periksa koneksi.</p></div>
           <div class="connection-details"><span>API node</span><strong id="home-api-state">Belum diverifikasi</strong><span>Mesh / Gateway</span><strong id="home-mesh-state">Belum diketahui</strong></div>
           <button id="home-check-button" class="button button-secondary" type="button">Periksa koneksi</button>
         </section>
         <section class="sos-card" aria-labelledby="sos-heading"><p class="eyebrow">DARURAT</p><h2 id="sos-heading">Butuh bantuan?</h2><p>Tekan SOS untuk mengirim laporan ke Field Node.</p><button id="sos-button" class="button button-sos" type="button" disabled><span aria-hidden="true">SOS</span><span id="sos-button-label">KIRIM SOS</span></button><p class="fine-print">ACK berarti Field Node menerima antrean, bukan konfirmasi Gateway atau petugas.</p></section>
         <section class="card location-summary"><div><p class="eyebrow">LOKASI SAYA</p><strong id="home-gps-status">GPS belum diperiksa</strong><p id="home-coordinates" class="coordinates">Koordinat terbaru belum tersedia</p></div><span id="tracking-badge" class="status-pill status-offline">Berhenti</span><button id="home-map-button" class="text-button" type="button">Lihat peta →</button></section>
         <section class="card report-card"><p class="eyebrow">LAPORAN TERAKHIR</p><strong id="home-report-status">Belum ada SOS aktif</strong><p id="home-report-detail" class="secondary-text">Status pengiriman akan muncul di sini.</p><button id="home-status-button" class="text-button" type="button">Lihat status →</button></section>
-        <section class="card guide-card"><strong>Langkah cepat</strong><p>1. Daftarkan identitas · 2. Hubungkan Wi-Fi node · 3. Periksa koneksi · 4. Aktifkan lokasi bila diperlukan.</p><button id="home-wifi-button" class="text-button" type="button">Panduan koneksi →</button></section>
+        <section class="card guide-card"><strong>Memakai RescueNet tanpa internet</strong><p>Buka aplikasi sekali saat online. Sambungkan ke Wi-Fi RescueNet, pilih tetap terhubung, lalu kembali ke sini dan periksa koneksi.</p><button id="home-wifi-button" class="text-button" type="button">Panduan koneksi →</button></section>
       </section>
 
       <section id="map-screen" class="screen" aria-labelledby="map-title" hidden>
@@ -96,7 +96,7 @@
         <div class="page-heading"><p class="eyebrow">PENGATURAN</p><h1 id="profile-title">Profil & privasi</h1><p class="lead">Kelola identitas dan kapan RescueNet boleh membagikan lokasi.</p></div>
         <details id="identity-card" class="card identity-editor"><summary id="profile-edit-label">Daftarkan identitas</summary><label for="profile-name-input">Nama</label><input id="profile-name-input" autocomplete="name" maxlength="60" placeholder="Nama yang ditampilkan" /><label for="profile-role-input">Peran</label><select id="profile-role-input"><option value="survivor">Penyintas</option><option value="rescuer">Tim Penyelamat</option></select><label for="profile-team-input">Tim / kelompok (opsional)</label><input id="profile-team-input" autocomplete="organization" maxlength="32" placeholder="Nama atau kode kelompok" /><button id="save-name-button" class="button button-primary" type="button">Simpan profil</button><button id="reset-profile-button" class="text-button danger-text" type="button">Reset identitas di perangkat ini</button><p id="profile-summary" class="fine-print">Profil lokal bukan login atau autentikasi.</p></details>
         <section class="card settings-card"><h2>Berbagi lokasi</h2><p id="permission-status" class="secondary-text">Izin lokasi: belum diminta</p><label class="consent-row"><input id="location-consent" type="checkbox" /><span>Saya setuju membagikan lokasi saat sharing aktif. Saya dapat berhenti kapan saja.</span></label><label for="tracking-interval-input">Interval maksimum saat diam</label><select id="tracking-interval-input" class="interval-select"><option value="30">30 detik</option><option value="60">60 detik</option><option value="120">120 detik</option></select><button id="tracking-button" class="button button-secondary" type="button">Mulai bagikan lokasi</button><button id="location-button" class="text-button" type="button">Perbarui lokasi sekali</button><p id="tracking-status" class="fine-print">Berbagi lokasi berhenti.</p><p id="background-notice" class="privacy-note">Tracking hanya dapat diandalkan saat aplikasi terbuka di foreground. iOS dapat menjeda PWA ketika di latar belakang atau layar terkunci.</p></section>
-        <details class="card network-card"><summary>Panduan Wi-Fi dan alamat node</summary><ol><li>Buka Pengaturan iPhone → Wi-Fi, pilih RescueNet-Node1 (atau node yang digunakan).</li><li>Tetap terhubung jika iPhone memperingatkan bahwa Wi-Fi tidak memiliki internet.</li><li>Kembali ke RescueNet dan periksa koneksi.</li></ol><label for="node-url-input">Alamat Field Node</label><input id="node-url-input" inputmode="url" autocomplete="url" value="http://192.168.4.1" aria-describedby="node-url-help" /><p id="node-url-help" class="fine-print">Alamat ini hanya mengubah tujuan API. Safari HTTPS ke HTTP lokal mungkin dibatasi; tidak ada bypass keamanan dari PWA.</p><button id="save-node-url-button" class="button button-secondary" type="button">Simpan alamat node</button></details>
+        <details class="card network-card"><summary>Panduan Wi-Fi dan alamat node</summary><ol><li>Buka RescueNet sekali saat online dan tambahkan ke Home Screen.</li><li>Sambungkan ke Wi-Fi RescueNet-Node yang digunakan.</li><li>Ikuti halaman sambutan Wi-Fi dan pilih <strong>Tetap Terhubung / Tanpa Internet</strong> jika muncul.</li><li>Kembali ke RescueNet, lalu tekan <strong>Periksa koneksi</strong>.</li></ol><label for="node-url-input">Alamat Field Node (HTTPS)</label><input id="node-url-input" inputmode="url" autocomplete="url" value="https://192.168.4.1" aria-describedby="node-url-help" /><p id="node-url-help" class="fine-print">Jika koneksi gagal, pastikan Safari bisa membuka https://192.168.4.1/api/status dan sertifikat lokal sudah dipercaya oleh iPhone.</p><button id="save-node-url-button" class="button button-secondary" type="button">Simpan alamat node</button></details>
         <section class="card settings-card"><h2>Privasi perangkat</h2><p class="secondary-text">Identitas dan koordinat tersimpan lokal. Permintaan SOS yang belum pasti dapat dipertahankan agar ID yang sama bisa dicoba kembali.</p><button id="privacy-delete-button" class="text-button danger-text" type="button">Hapus data lokal</button><p class="fine-print">RescueNet PWA · versi 2 · data yang telah diterima Field Node/server tidak dapat dihapus dari sini.</p></section>
       </section>
 
@@ -107,7 +107,7 @@
         <button type="button" data-screen="profile"><span aria-hidden="true">☻</span><span>Profil</span></button>
       </nav>
 
-      <footer>Lokasi adalah data sensitif. Bagikan hanya saat diperlukan. Koneksi HTTPS-hosted PWA ke API HTTP lokal bergantung pada kebijakan Safari/iOS.</footer>
+      <footer>Lokasi adalah data sensitif. Bagikan hanya saat diperlukan. Pengiriman ke Field Node memakai HTTPS.</footer>
     </main>
     <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
     <script type="module" src="./app.mjs"></script>

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverLocation, deliverSos, getBrowserLocation, isPendingLocationStale, locationAgeMs, locationRetryDelayMs, makeLocationPacket, makeSosPacket, nodeApiReadiness, normalizeNodeOrigin, normalizeProfile, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
+import { DEFAULT_NODE_URL, deliverLocation, deliverSos, getBrowserLocation, isPendingLocationStale, locationAgeMs, locationRetryDelayMs, makeLocationPacket, makeSosPacket, nodeApiReadiness, normalizeNodeOrigin, normalizeProfile, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
 
 const status = {
   service: 'rescuenet-field-node', api_version: 1, node_id: 1, device: 'field_node',
-  status: 'ready', mobile_protocol: 1, mobile_tx_enabled: true,
+  status: 'ready', mobile_protocol: 1, mobile_tx_enabled: true, pending_sos: 0,
+  pending_locations: 0, mesh_started: true, mesh_synchronized: true,
+  gateway_found: true, gateway_address: 31452, route_count: 2,
 };
 const response = (body, statusCode = 200, contentType = 'application/json') => new Response(JSON.stringify(body), { status: statusCode, headers: { 'content-type': contentType } });
 const user = { user_id: 'USR-test', name: 'Riko Dharmawan' };
@@ -13,9 +15,11 @@ const location = { lat: -6.2088, lon: 106.8456, accuracy: 6.8, timestamp: 1_000_
 test('belum terhubung: probe menolak respons gagal, tidak membuat permintaan SOS', async () => {
   const calls = [];
   const fetcher = async (url, options) => { calls.push({ url, options }); throw new TypeError('offline'); };
-  await assert.rejects(probeNode(fetcher), error => error instanceof NodeApiError && error.code === 'NETWORK');
+  await assert.rejects(probeNode(fetcher), error => error instanceof NodeApiError
+    && error.code === 'NETWORK' && /tidak memberi rincian penyebab/.test(error.message));
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /\/api\/status$/);
+  assert.equal(calls[0].url, 'https://192.168.4.1/api/status');
+  assert.equal(calls[0].options.cache, 'no-store');
   assert.equal(calls.some(call => call.url.endsWith('/api/sos')), false);
 });
 
@@ -23,7 +27,7 @@ test('status request mendukung timeout dan pembatalan oleh pemanggil', async () 
   const never = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
   await assert.rejects(probeNode(never, 5), error => error.code === 'TIMEOUT');
   const controller = new AbortController(); controller.abort();
-  await assert.rejects(probeNode((_url,{signal})=>{if(signal.aborted)throw signal.reason;return response(status);}, 1000, 'http://192.168.4.1', controller.signal), error => error.code === 'CANCELLED');
+  await assert.rejects(probeNode((_url,{signal})=>{if(signal.aborted)throw signal.reason;return response(status);}, 1000, 'https://192.168.4.1', controller.signal), error => error.code === 'CANCELLED');
 });
 
 test('API Field Node diverifikasi terpisah dari kesiapan mesh/mobile TX', async () => {
@@ -34,7 +38,7 @@ test('API Field Node diverifikasi terpisah dari kesiapan mesh/mobile TX', async 
   assert.equal(nodeApiReadiness(degraded), 'FIELD_API_NOT_READY');
   const missingTxFlag = await probeNode(async () => response({ ...status, mobile_tx_enabled: undefined }));
   assert.equal(nodeApiReadiness(missingTxFlag), 'FIELD_API_NOT_READY');
-  await assert.rejects(probeNode(async () => response({ ...status, api_version: 99 })), /belum kompatibel/);
+  await assert.rejects(probeNode(async () => response({ ...status, api_version: 99 })), /tidak sesuai dengan format RescueNet/);
   await assert.rejects(probeNode(async () => response(status, 200, 'text/html')), /bukan JSON/);
 });
 
@@ -139,10 +143,12 @@ test('lokasi buruk/stale ditolak dan umur fix tidak menjadi negatif untuk timest
   assert.equal(locationAgeMs({ timestamp: 11_000 }, 10_000), 0);
 });
 
-test('origin node hanya menerima HTTP(S) origin dan menolak URL berisi kredensial/path', () => {
-  assert.equal(normalizeNodeOrigin(' http://192.168.4.1/ '), 'http://192.168.4.1');
+test('origin node hanya menerima HTTPS dan menolak URL berisi kredensial/path', () => {
+  assert.equal(DEFAULT_NODE_URL, 'https://192.168.4.1');
+  assert.equal(normalizeNodeOrigin(' https://192.168.4.1/ '), 'https://192.168.4.1');
   assert.equal(normalizeNodeOrigin('https://node.local:8443'), 'https://node.local:8443');
   assert.throws(() => normalizeNodeOrigin('file:///tmp/node'), error => error.code === 'NODE_URL');
+  assert.throws(() => normalizeNodeOrigin('http://192.168.4.1'), error => error.code === 'NODE_URL');
   assert.throws(() => normalizeNodeOrigin('http://user:pass@192.168.4.1'), error => error.code === 'NODE_URL');
   assert.throws(() => normalizeNodeOrigin('http://192.168.4.1/api'), error => error.code === 'NODE_URL');
 });
