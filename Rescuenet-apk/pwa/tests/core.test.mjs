@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverLocation, deliverSos, getBrowserLocation, makeLocationPacket, makeSosPacket, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
+import { deliverLocation, deliverSos, getBrowserLocation, isPendingLocationStale, locationAgeMs, locationRetryDelayMs, makeLocationPacket, makeSosPacket, normalizeNodeOrigin, normalizeProfile, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
 
 const status = {
   service: 'rescuenet-field-node', api_version: 1, node_id: 1, device: 'field_node',
@@ -85,6 +85,8 @@ test('tracking lokasi mengikuti interval/movement native dan payload mobile wire
   assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 10_000, lat: location.lat + 0.001 }), false);
   assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 16_000, lat: location.lat + 0.001 }), true);
   assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 30_000 }), true);
+  assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 30_000 }, 60_000), false);
+  assert.equal(shouldQueueLocation(location, { ...location, timestamp: location.timestamp + 60_000 }, 60_000), true);
   const packet = makeLocationPacket(user, location, 'loc-123', location.timestamp);
   assert.deepEqual(packet, { ...user, request_id: 'loc-123', timestamp: 1000, has_gps: true,
     lat: location.lat, lon: location.lon, accuracy: location.accuracy });
@@ -107,4 +109,39 @@ test('tracking tidak menyebut lokasi terkirim tanpa ACK Field Node yang sesuai',
     calls += 1;
     return calls === 1 ? response(status) : response({ service: 'rescuenet-field-node', accepted: true, request_id: 'different-id' });
   }), error => error.code === 'ACK');
+});
+
+test('profil menormalisasi input, mempertahankan ID saat edit, dan tidak ikut mengubah wire mobile', () => {
+  const profile = normalizeProfile({ user_id: 'stable-1', name: '  Riko   Dharmawan ', role: 'rescuer', team: 'Tim A' });
+  assert.deepEqual(profile, { user_id: 'stable-1', name: 'Riko Dharmawan', role: 'rescuer', team: 'Tim A' });
+  const edited = normalizeProfile({ user_id: 'new-id-must-not-win', name: 'Riko D', role: 'survivor' }, profile);
+  assert.equal(edited.user_id, profile.user_id);
+  assert.throws(() => normalizeProfile({ name: ' ' }), error => error.code === 'PROFILE');
+  const packet = makeSosPacket(profile, null, 'sos-profile', 1_000_000);
+  assert.deepEqual(Object.keys(packet).sort(), ['has_gps', 'name', 'request_id', 'sos', 'timestamp', 'user_id'].sort());
+});
+
+test('lokasi buruk/stale ditolak dan umur fix tidak menjadi negatif untuk timestamp masa depan', () => {
+  assert.equal(shouldQueueLocation(null, { ...location, accuracy: 400 }), false);
+  assert.throws(() => makeLocationPacket(user, { ...location, accuracy: 251 }, 'loc-poor', location.timestamp), error => error.code === 'GPS_FAILED');
+  assert.equal(locationAgeMs({ timestamp: 9_000 }, 10_000), 1_000);
+  assert.equal(locationAgeMs({ timestamp: 11_000 }, 10_000), 0);
+});
+
+test('origin node hanya menerima HTTP(S) origin dan menolak URL berisi kredensial/path', () => {
+  assert.equal(normalizeNodeOrigin(' http://192.168.4.1/ '), 'http://192.168.4.1');
+  assert.equal(normalizeNodeOrigin('https://node.local:8443'), 'https://node.local:8443');
+  assert.throws(() => normalizeNodeOrigin('file:///tmp/node'), error => error.code === 'NODE_URL');
+  assert.throws(() => normalizeNodeOrigin('http://user:pass@192.168.4.1'), error => error.code === 'NODE_URL');
+  assert.throws(() => normalizeNodeOrigin('http://192.168.4.1/api'), error => error.code === 'NODE_URL');
+});
+
+test('pending location memakai retry backoff terbatas dan menolak fix expired/future', () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(locationRetryDelayMs), [5_000, 10_000, 20_000, 40_000, 80_000]);
+  assert.equal(locationRetryDelayMs(0), 0);
+  assert.equal(locationRetryDelayMs(10), 120_000);
+  assert.equal(isPendingLocationStale({ timestamp: 880 }, 1_000_000), false);
+  assert.equal(isPendingLocationStale({ timestamp: 879 }, 1_000_000), true);
+  assert.equal(isPendingLocationStale({ timestamp: 1_006 }, 1_000_000), true);
+  assert.equal(isPendingLocationStale({}, 1_000_000), true);
 });
