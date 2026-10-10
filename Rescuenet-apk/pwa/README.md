@@ -1,28 +1,39 @@
 # RescueNet iPhone PWA
 
-Static PWA source for iPhone Safari/Home Screen, separate from the Expo app in `../src/`.
+Static PWA source for iPhone Safari and Add to Home Screen, separate from the Expo app in `../src/`.
 
-## Current contract
+## Current behavior
 
-- Field Node origin defaults to `http://192.168.4.1`; its current SSID format is `RescueNet-Node<N>`.
-- The PWA verifies `GET /api/status` (`rescuenet-field-node`, API v1, node ID, device, readiness, mobile protocol and TX capability).
-- It sends the existing JSON wire contract to `POST /api/location` or `POST /api/sos`, with `Idempotency-Key` equal to `request_id`.
-- HTTP 202/accepted is only a Field Node enqueue ACK. Gateway forwarding, server database commit, and responder action are separate stages.
-- Live location requires explicit consent and runs in foreground. Rate control is movement/30-second default cadence (selectable 30/60/120), one coalesced pending fix, 2-minute freshness, 250 m accuracy threshold, and up to five total POST attempts (initial plus four retries). SOS is independent and may omit GPS.
+- First-use onboarding collects a local display name, role, optional team, Wi-Fi guide, API verification, and optional location permission. The stable random `user_id` is retained when the profile is edited; it is not authentication.
+- Main navigation has Beranda, Peta, Status, and Profil. The map page displays the latest GPS fix and accuracy without downloading third-party map tiles; an explicit Apple Maps link opens only when the user chooses it.
+- Default Field Node API origin is `http://192.168.4.1`. The PWA reads `GET /api/status` and sends the existing payloads to `POST /api/location` or `POST /api/sos`, using `request_id` as `Idempotency-Key`.
+- API identity/readability is shown separately from radio/mobile transmit readiness and mesh/Gateway status. HTTP accepted ACK is only proof the Field Node enqueued a request; Gateway, server storage, and responder action are not confirmed by that ACK.
+- Location sharing requires explicit consent, a secure browser context, and one foreground `watchPosition`. Stationary sample interval is selectable (30/60/120 seconds; default 120); the scheduler applies at least 60 seconds between accepted fixes, one pending latest fix, one in-flight request, bounded retry/backoff, and a two-minute freshness limit.
+- SOS works without GPS and may be saved locally when the node is offline. Up to ten local events are retained best-effort; retry reuses the same request ID. Browser storage is not equivalent to the Field Node's durable NVS journal.
 
-## iPhone browser constraints
+## iPhone and offline limitations
 
-The PWA needs a trusted HTTPS context for reliable Geolocation API and Add to Home Screen. Field Node currently exposes HTTP on a private Wi-Fi AP. Firmware CORS/preflight support is necessary but does not guarantee Safari permits an HTTPS page to call an HTTP private-network API. Opening the HTTP portal directly is useful for API diagnosis, but is not a supported substitute for a GPS-capable installed PWA. Do not claim background GPS while the PWA is hidden or the screen is locked.
+Reliable browser geolocation and service workers require HTTPS or another secure context. The Field Node currently exposes plain HTTP on its private Wi-Fi AP. Firmware CORS/preflight support alone cannot guarantee that Safari/iOS allows an HTTPS page to call an HTTP local-network endpoint. Browser errors do not consistently distinguish mixed content, CORS, local-network policy, and connectivity. An iPhone test on the target iOS version remains required.
 
-The PWA shell can open offline only after its service worker and assets were installed while reachable. API calls are network-only and do not succeed from cache. A reliable offline HTTPS-to-Field-Node path remains an architecture/device validation blocker; see `../../docs/RESCUENET_PWA_LIVE_LOCATION_ARCHITECTURE.md`.
+Foreground tracking only: iOS may suspend a PWA in background or with the screen locked. Persistent background tracking requires a native iOS app using Core Location. The app shell is available offline only after successful service-worker installation; SOS/location requests are never served from cache.
 
-## Local preview
+## Local checks
 
-`npm run pwa:serve` serves the static page on localhost for desktop UI inspection. It does not validate iPhone Safari, the private Wi-Fi API, mesh delivery, or production hosting. This task did not run the preview, tests, build, firmware upload, or deployment.
+From the repository root:
 
-## Review docs
+```powershell
+node --check Rescuenet-apk/pwa/app.mjs
+node --check Rescuenet-apk/pwa/core.mjs
+node --check Rescuenet-apk/pwa/location-scheduler.mjs
+node --test Rescuenet-apk/pwa/tests/*.test.mjs
+```
 
-- `../../docs/RESCUENET_PWA_IPHONE_CHANGES.md`
-- `../../docs/RESCUENET_PWA_IPHONE_TEST_PLAN.md`
-- `../../docs/RESCUENET_PWA_LIVE_LOCATION_ARCHITECTURE.md`
-- `../../docs/RESCUENET_PWA_DEPLOYMENT_GUIDE.md`
+For a local visual preview from the repository root, run `node Rescuenet-apk/pwa/server.mjs` and open `http://localhost:4173`. Alternatively, run `npm run pwa:serve` from `Rescuenet-apk`. Desktop preview is not proof of iPhone Safari, local AP connectivity, mesh delivery, or production deployment.
+
+## Review documentation
+
+- `../../docs/RESCUENET_PWA_FINAL_CHANGES.md`
+- `../../docs/RESCUENET_PWA_FINAL_ARCHITECTURE.md`
+- `../../docs/RESCUENET_PWA_FINAL_TEST_PLAN.md`
+- `../../docs/RESCUENET_PWA_FINAL_DEPLOYMENT.md`
+- `../../docs/RESCUENET_PWA_GITHUB_READINESS.md`

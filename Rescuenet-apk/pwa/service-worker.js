@@ -1,6 +1,6 @@
-const CACHE_NAME = 'rescuenet-pwa-v5';
+const CACHE_NAME = 'rescuenet-pwa-v6';
 const APP_SHELL = [
-  './', './index.html', './styles.css', './app.mjs', './core.mjs',
+  './', './index.html', './styles.css', './app.mjs', './core.mjs', './location-scheduler.mjs',
   './manifest.webmanifest', './icon.svg', './assets/rescuenet-logo.png',
 ];
 

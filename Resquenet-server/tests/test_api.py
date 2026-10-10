@@ -1,6 +1,7 @@
 """API and additive-database tests without physical Gateway dependencies."""
 
 import sqlite3
+import time
 
 import pytest
 
@@ -109,6 +110,72 @@ def test_map_positions_include_latest_field_and_mobile_locations(client, app):
             "distance_m": positions["mobile:user-123"]["distance_to_source_m"],
         }
     ]
+
+
+def test_delayed_mobile_fix_does_not_replace_newer_location(client, app):
+    db_path = app.config["DATABASE_PATH"]
+    common = {
+        "event_type": "LOCATION", "user_key": "same-user", "name": "Riko",
+        "name_truncated": 0, "has_gps": 1, "accuracy": 10.0,
+        "source_node": 1, "mesh_source": 9488, "mesh_hops": 1,
+        "rssi": None, "snr": None,
+    }
+    database.insert_mobile_event({
+        **common, "request_key": "older-fix-arrives-late", "event_timestamp": 1_700_000_100,
+        "fix_timestamp": 1_700_000_100, "lat": -6.21, "lon": 106.82, "received_at": 1_700_000_300.0,
+    }, database_path=db_path)
+    database.insert_mobile_event({
+        **common, "request_key": "newer-fix-arrives-first", "event_timestamp": 1_700_000_200,
+        "fix_timestamp": 1_700_000_200, "lat": -6.20, "lon": 106.81, "received_at": 1_700_000_210.0,
+    }, database_path=db_path)
+
+    response = client.get("/api/map/positions")
+    assert response.status_code == 200
+    mobile = next(item for item in response.get_json()["positions"] if item["id"] == "mobile:same-user")
+    assert mobile["lat"] == pytest.approx(-6.20)
+    assert mobile["fix_timestamp"] == 1_700_000_200
+    assert mobile["received_at"] == 1_700_000_210.0
+
+
+def test_mobile_map_clamps_far_future_client_clock(client, app):
+    received_at = time.time() - 10
+    database.insert_mobile_event({
+        "event_type": "LOCATION", "request_key": "future-clock", "user_key": "clock-user",
+        "name": "Riko", "name_truncated": 0, "has_gps": 1, "accuracy": 8.0,
+        "lat": -6.20, "lon": 106.81, "event_timestamp": int(received_at + 86_400),
+        "fix_timestamp": int(received_at + 86_400), "source_node": 1, "mesh_source": 9488,
+        "mesh_hops": 1, "rssi": None, "snr": None, "received_at": received_at,
+    }, database_path=app.config["DATABASE_PATH"])
+
+    response = client.get("/api/map/positions")
+    assert response.status_code == 200
+    mobile = next(item for item in response.get_json()["positions"] if item["id"] == "mobile:clock-user")
+    assert mobile["fix_timestamp"] == pytest.approx(received_at)
+    assert mobile["updated_at"] <= response.get_json()["generated_at"]
+
+
+def test_mobile_map_falls_back_to_receipt_for_malformed_clock(client, app):
+    received_at = time.time() - 5
+    database.insert_mobile_event({
+        "event_type": "LOCATION", "request_key": "valid-before-bad-clock", "user_key": "bad-clock-user",
+        "name": "Test", "name_truncated": 0, "has_gps": 1, "accuracy": 8.0,
+        "lat": -6.21, "lon": 106.82, "event_timestamp": int(received_at - 60),
+        "fix_timestamp": int(received_at - 60), "source_node": 1, "mesh_source": 9488,
+        "mesh_hops": 1, "rssi": None, "snr": None, "received_at": received_at - 60,
+    }, database_path=app.config["DATABASE_PATH"])
+    database.insert_mobile_event({
+        "event_type": "LOCATION", "request_key": "bad-clock", "user_key": "bad-clock-user",
+        "name": "Test", "name_truncated": 0, "has_gps": 1, "accuracy": 8.0,
+        "lat": -6.20, "lon": 106.81, "event_timestamp": "bad-time",
+        "fix_timestamp": "bad-time", "source_node": 1, "mesh_source": 9488,
+        "mesh_hops": 1, "rssi": None, "snr": None, "received_at": received_at,
+    }, database_path=app.config["DATABASE_PATH"])
+
+    response = client.get("/api/map/positions")
+    assert response.status_code == 200
+    mobile = next(item for item in response.get_json()["positions"] if item["id"] == "mobile:bad-clock-user")
+    assert mobile["fix_timestamp"] == pytest.approx(received_at)
+    assert mobile["lat"] == pytest.approx(-6.20)
 
 
 def test_get_reports_and_filters(client):

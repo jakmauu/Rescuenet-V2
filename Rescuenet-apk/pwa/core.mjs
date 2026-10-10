@@ -19,22 +19,35 @@ export function verifyNodeStatus(data) {
     && data.api_version === 1
     && Number.isInteger(data.node_id) && data.node_id > 0
     && data.device === 'field_node'
-    && data.status === 'ready'
-    && data.mobile_protocol === 1
-    && data.mobile_tx_enabled === true;
+    && ['ready', 'degraded'].includes(data.status)
+    && data.mobile_protocol === 1;
+}
+
+export function nodeApiReadiness(data) {
+  if (!verifyNodeStatus(data)) return 'API_INCOMPATIBLE';
+  return data.status === 'ready' && data.mobile_tx_enabled === true
+    ? 'FIELD_CONNECTED' : 'FIELD_API_NOT_READY';
 }
 
 async function fetchWithTimeout(fetcher, url, options, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(new DOMException('Request timeout', 'TimeoutError')), timeoutMs);
+  const externalSignal = options.signal;
+  const abortFromCaller = () => controller.abort(externalSignal.reason);
+  if (externalSignal?.aborted) abortFromCaller();
+  else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });
   try { return await fetcher(url, { ...options, signal: controller.signal }); }
   catch (error) {
-    if (error?.name === 'AbortError') throw new NodeApiError('Waktu tunggu Field Node habis (timeout). Pastikan sudah terhubung ke Wi-Fi RescueNet-Node.', 'TIMEOUT');
+    if (externalSignal?.aborted) throw new NodeApiError('Pemeriksaan koneksi dibatalkan.', 'CANCELLED');
+    if (controller.signal.aborted) throw new NodeApiError('Waktu tunggu Field Node habis. Pastikan terhubung ke Wi-Fi RescueNet-Node.', 'TIMEOUT');
     if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
-      throw new NodeApiError('Safari/iOS mungkin memblokir PWA HTTPS saat mengakses API Field Node HTTP lokal (mixed content atau izin jaringan lokal). CORS saja tidak dapat melewati batas keamanan ini. Periksa koneksi Wi-Fi; untuk operasi konsisten diperlukan HTTPS lokal tepercaya atau aplikasi iOS native.', 'BROWSER_BLOCKED');
+      throw new NodeApiError('Browser tidak dapat menyelesaikan permintaan HTTP lokal dari origin HTTPS. Penyebabnya bisa berupa jaringan, mixed content, CORS, atau kebijakan akses jaringan lokal; PWA tidak dapat memastikan penyebab tunggal. CORS saja tidak melewati batas mixed content.', 'BROWSER_BLOCKED');
     }
     throw new NodeApiError('Field Node tidak dapat dijangkau. Pastikan Wi-Fi terhubung ke RescueNet-Node.', 'NETWORK');
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', abortFromCaller);
+  }
 }
 
 async function readJson(response) {
@@ -48,9 +61,9 @@ async function readJson(response) {
 
 function endpoint(baseUrl, path) { return `${baseUrl ?? NODE_URL}${path}`; }
 
-export async function probeNode(fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl = NODE_URL) {
+export async function probeNode(fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl = NODE_URL, signal = undefined) {
   const response = await fetchWithTimeout(fetcher, endpoint(baseUrl, '/api/status'), {
-    method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store', targetAddressSpace: 'local',
+    method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store', targetAddressSpace: 'local', signal,
   }, timeoutMs);
   const data = await readJson(response);
   if (!verifyNodeStatus(data)) {
@@ -99,14 +112,14 @@ export function makeLocationPacket(user, location, requestId, now = Date.now()) 
     lat: location.lat, lon: location.lon, accuracy: location.accuracy };
 }
 
-export function shouldQueueLocation(previous, current, intervalMs = TRACKING_INTERVAL_MS) {
+export function shouldQueueLocation(previous, current, intervalMs = TRACKING_INTERVAL_MS, minimumSpacingMs = MIN_MOVEMENT_INTERVAL_MS) {
   if (!current || !Number.isFinite(current.lat) || !Number.isFinite(current.lon)
     || !Number.isFinite(current.timestamp) || Math.abs(current.lat) > 90 || Math.abs(current.lon) > 180
     || (current.accuracy !== null && (!Number.isFinite(current.accuracy) || current.accuracy < 0 || current.accuracy > MAX_LOCATION_ACCURACY_METERS))) return false;
   if (!previous) return true;
   const elapsed = current.timestamp - previous.timestamp;
   if (elapsed >= intervalMs) return true;
-  if (elapsed < MIN_MOVEMENT_INTERVAL_MS) return false;
+  if (elapsed < minimumSpacingMs) return false;
   const radians = Math.PI / 180;
   const dLat = (current.lat - previous.lat) * radians;
   const dLon = (current.lon - previous.lon) * radians;

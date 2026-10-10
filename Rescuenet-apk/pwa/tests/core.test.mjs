@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverLocation, deliverSos, getBrowserLocation, isPendingLocationStale, locationAgeMs, locationRetryDelayMs, makeLocationPacket, makeSosPacket, normalizeNodeOrigin, normalizeProfile, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
+import { deliverLocation, deliverSos, getBrowserLocation, isPendingLocationStale, locationAgeMs, locationRetryDelayMs, makeLocationPacket, makeSosPacket, nodeApiReadiness, normalizeNodeOrigin, normalizeProfile, NodeApiError, probeNode, shouldQueueLocation } from '../core.mjs';
 
 const status = {
   service: 'rescuenet-field-node', api_version: 1, node_id: 1, device: 'field_node',
@@ -19,10 +19,21 @@ test('belum terhubung: probe menolak respons gagal, tidak membuat permintaan SOS
   assert.equal(calls.some(call => call.url.endsWith('/api/sos')), false);
 });
 
-test('Field Node hanya lolos verifikasi dengan status API aktual dan ready', async () => {
+test('status request mendukung timeout dan pembatalan oleh pemanggil', async () => {
+  const never = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  await assert.rejects(probeNode(never, 5), error => error.code === 'TIMEOUT');
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(probeNode((_url,{signal})=>{if(signal.aborted)throw signal.reason;return response(status);}, 1000, 'http://192.168.4.1', controller.signal), error => error.code === 'CANCELLED');
+});
+
+test('API Field Node diverifikasi terpisah dari kesiapan mesh/mobile TX', async () => {
   const data = await probeNode(async () => response(status));
   assert.equal(data.node_id, 1);
-  await assert.rejects(probeNode(async () => response({ ...status, status: 'degraded' })), /belum kompatibel|tidak siap/);
+  assert.equal(nodeApiReadiness(data), 'FIELD_CONNECTED');
+  const degraded = await probeNode(async () => response({ ...status, status: 'degraded', mobile_tx_enabled: false, gateway_found: false }));
+  assert.equal(nodeApiReadiness(degraded), 'FIELD_API_NOT_READY');
+  const missingTxFlag = await probeNode(async () => response({ ...status, mobile_tx_enabled: undefined }));
+  assert.equal(nodeApiReadiness(missingTxFlag), 'FIELD_API_NOT_READY');
   await assert.rejects(probeNode(async () => response({ ...status, api_version: 99 })), /belum kompatibel/);
   await assert.rejects(probeNode(async () => response(status, 200, 'text/html')), /bukan JSON/);
 });

@@ -27,6 +27,14 @@ def _valid_coordinate(lat: Any, lon: Any) -> bool:
     )
 
 
+def _timestamp(value: Any, fallback: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return fallback
+    return parsed if math.isfinite(parsed) and parsed >= 0 else fallback
+
+
 def _freshness(age_seconds: int, recent_seconds: int, stale_seconds: int) -> str:
     if age_seconds <= recent_seconds:
         return "recent"
@@ -86,7 +94,14 @@ def _latest_rows(database_path: str | Path) -> tuple[list[dict[str, Any]], list[
                     AND m2.has_gps = 1
                     AND m2.lat BETWEEN -90 AND 90
                     AND m2.lon BETWEEN -180 AND 180
-                  ORDER BY m2.received_at DESC, m2.id DESC
+                  ORDER BY CASE
+                             WHEN CAST(COALESCE(m2.fix_timestamp, m2.event_timestamp) AS REAL) <= 0
+                               OR CAST(COALESCE(m2.fix_timestamp, m2.event_timestamp) AS REAL)
+                                  > CAST(m2.received_at AS REAL) + 300
+                             THEN CAST(m2.received_at AS REAL)
+                             ELSE CAST(COALESCE(m2.fix_timestamp, m2.event_timestamp) AS REAL)
+                           END DESC,
+                           m2.received_at DESC, m2.id DESC
                   LIMIT 1
               )
             ORDER BY m.name COLLATE NOCASE, m.user_key
@@ -117,7 +132,8 @@ def get_map_snapshot(
     for row in field_rows:
         if not _valid_coordinate(row.get("lat"), row.get("lon")):
             continue
-        updated_at = float(row.get("received_at") or 0)
+        received_at = _timestamp(row.get("received_at"))
+        updated_at = received_at
         seconds_ago = max(0, int(generated_at - updated_at))
         node_id = int(row["src_id"])
         critical = int(row.get("sos") or 0) == 1 or str(
@@ -148,9 +164,25 @@ def get_map_snapshot(
     for row in mobile_rows:
         if not _valid_coordinate(row.get("lat"), row.get("lon")):
             continue
-        updated_at = float(row.get("received_at") or 0)
+        # A delayed LoRa packet must not make an old phone fix appear newest.
+        received_at = _timestamp(row.get("received_at"))
+        fix_timestamp = _timestamp(
+            row.get("fix_timestamp") or row.get("event_timestamp"), received_at
+        )
+        # Phone clocks can be wrong. Bound future client time to server receipt
+        # so it cannot produce a future timestamp or appear newer indefinitely.
+        if fix_timestamp > received_at + 300:
+            fix_timestamp = received_at
+        fix_timestamp = min(fix_timestamp, generated_at)
+        updated_at = fix_timestamp
         seconds_ago = max(0, int(generated_at - updated_at))
-        source_node = int(row["source_node"])
+        try:
+            source_node = int(row["source_node"])
+        except (TypeError, ValueError, OverflowError):
+            continue
+        accuracy = _timestamp(row.get("accuracy"), -1.0)
+        if accuracy < 0 or accuracy > 10_000:
+            accuracy = None
         item = {
             "id": f"mobile:{row['user_key']}",
             "type": "mobile_user",
@@ -158,10 +190,12 @@ def get_map_snapshot(
             "user_key": str(row["user_key"]),
             "lat": float(row["lat"]),
             "lon": float(row["lon"]),
-            "accuracy": row.get("accuracy"),
+            "accuracy": accuracy,
             "updated_at": updated_at,
-            "fix_timestamp": row.get("fix_timestamp"),
+            "fix_timestamp": fix_timestamp,
+            "received_at": received_at,
             "seconds_ago": seconds_ago,
+            "received_seconds_ago": max(0, int(generated_at - received_at)),
             "freshness": _freshness(seconds_ago, recent_seconds, stale_seconds),
             "critical": str(row.get("event_type") or "").upper() == "SOS",
             "event_type": row.get("event_type"),
