@@ -15,6 +15,8 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
   }
   for (const tab of ['home','map','status','profile']) assert.match(html, new RegExp(`data-screen="${tab}"`));
   assert.match(app, /document\.querySelectorAll\('\.bottom-nav button'\)/);
+  assert.match(app, /function scheduleSplashRoute\(\)/);
+  assert.match(app, /pageshow'.*scheduleSplashRoute\(\)/);
 });
 
 test('service worker caches the scheduler dependency and does not cache API responses', () => {

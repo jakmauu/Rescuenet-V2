@@ -121,6 +121,16 @@ function showScreen(name) {
 }
 function beginOnboarding(step = 0) { state.onboardingStep = step; showScreen('onboarding'); renderOnboarding(); }
 function finishOnboarding() { safeStorage.write(KEY.onboarded, true); showScreen('home'); renderAll(); }
+function scheduleSplashRoute() {
+  if (state.screen !== 'splash' || state.splashTimer !== null) return;
+  state.splashTimer = setTimeout(() => {
+    state.splashTimer = null;
+    if (state.screen !== 'splash') return;
+    const firstRun = !profile() || safeStorage.read(KEY.onboarded) !== true;
+    if (firstRun) beginOnboarding(profile() ? 2 : 0);
+    else showScreen('home');
+  }, 180);
+}
 function renderOnboarding() {
   const step = state.onboardingStep;
   const titles = ['Selamat datang di RescueNet','Daftarkan identitas','Hubungkan ke Field Node','Verifikasi koneksi','Aktifkan lokasi bila dibutuhkan'];
@@ -384,19 +394,18 @@ byId['onboarding-skip'].addEventListener('click',()=>{if(state.onboardingStep===
 byId['permission-button'].addEventListener('click',()=>void requestLocation());
 byId['onboarding-location-consent'].addEventListener('change',()=>{state.consent=byId['onboarding-location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['onboarding-location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan; lokasi tidak akan dibagikan.');}});
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){void checkConnection();startTracking();scheduler.resume();}
+  if(document.visibilityState==='visible'){scheduleSplashRoute();void checkConnection();startTracking();scheduler.resume();}
   else{stopTracking();renderLocation();}
 });
-window.addEventListener('pagehide',()=>{stopTracking();clearTimeout(state.toastTimer);clearTimeout(state.splashTimer);clearConnectionRetry();state.checkController?.abort();});
-window.addEventListener('pageshow',()=>{if(document.visibilityState==='visible'){void checkConnection();startTracking();}});
+window.addEventListener('pagehide',()=>{stopTracking();clearTimeout(state.toastTimer);clearTimeout(state.splashTimer);state.splashTimer=null;clearConnectionRetry();state.checkController?.abort();});
+window.addEventListener('pageshow',()=>{if(document.visibilityState==='visible'){scheduleSplashRoute();void checkConnection();startTracking();}});
 
 byId['node-url-input'].value=safeStorage.read(KEY.nodeUrl)||'http://192.168.4.1';
 byId['name-input'].value=profile()?.name||'';byId['role-input'].value=profile()?.role||'survivor';byId['team-input'].value=profile()?.team||'';
 if(state.events.at(-1)?.status==='SENDING'){state.events.at(-1).status='UNKNOWN';state.events.at(-1).error='Aplikasi ditutup sebelum ACK diterima. Retry memakai ID yang sama.';persistSosEvents();}
 renderAll();
-const firstRun=!profile()||safeStorage.read(KEY.onboarded)!==true;
 showScreen('splash');
-state.splashTimer=setTimeout(()=>{if(firstRun)beginOnboarding(profile()?2:0);else showScreen('home');},180);
+scheduleSplashRoute();
 void checkConnection();
 if(state.tracking&&state.consent)startTracking();
 if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('./service-worker.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
