@@ -1,0 +1,29 @@
+<section class="view" id="view-reports" data-view-panel="reports" aria-label="Emergency Reports">
+  <div class="report-summary" id="report-summary"><div class="loading-state">Loading report summary…</div></div>
+  <div class="filters" aria-label="Report filters">
+    <label class="search-field"><svg aria-hidden="true"><use href="#i-search"/></svg><span class="sr-only">Search reports</span><input id="report-search" type="search" placeholder="Search ID, node, condition or message"></label>
+    <label><span class="sr-only">Condition</span><select id="condition-filter"><option value="">All conditions</option></select></label>
+    <label><span class="sr-only">Status</span><select id="status-filter"><option value="">All statuses</option><option>BARU</option><option>DITANGANI</option><option>SELESAI</option></select></label>
+    <label><span class="sr-only">Received time</span><select id="time-filter"><option value="">All times</option><option value="24">Last 24 hours</option><option value="6">Last 6 hours</option><option value="1">Last hour</option></select></label>
+    <label><span class="sr-only">SOS</span><select id="sos-filter"><option value="">All reports</option><option value="1">SOS only</option><option value="0">Non-SOS</option></select></label>
+    <label><span class="sr-only">Source node</span><select id="node-filter"><option value="">All nodes</option></select></label>
+    <button class="button ghost" id="clear-filters">Clear filters</button>
+  </div>
+  <div class="reports-layout">
+    <div class="reports-main">
+      <article class="panel pwa-report-panel">
+        <div class="panel-header"><div><h2>Mobile SOS reports</h2><p>PWA requests durably stored by this server</p></div><span class="legend-note">Live check every 2 seconds</span></div>
+        <div id="reports-mobile-sos"><div class="loading-state">Checking for PWA SOS…</div></div>
+      </article>
+      <article class="panel report-table-panel">
+        <div class="panel-header report-header"><div><h2>Emergency Reports <span class="record-count" id="report-count">Loading…</span></h2><p>Portal and device reports · select a row to review</p></div>
+          <label class="sort-picker"><span>Sort by</span><select id="report-sort"><option value="received_at">Received time</option><option value="id">Database ID</option><option value="pkt_id">Packet ID</option><option value="src_id">Source node</option><option value="kondisi">Condition</option><option value="jumlah">Victim count</option><option value="hop">Hop</option><option value="rssi">Gateway RX RSSI</option><option value="snr">Gateway RX SNR</option><option value="status">Status</option></select></label>
+        </div>
+        <div class="table-wrap" id="reports-table"><div class="loading-state">Loading reports…</div></div>
+        <div class="pagination"><span id="report-range">No records loaded</span><div id="report-pagination" class="pagination-buttons"></div><label>Rows per page <select id="report-page-size"><option>15</option><option>30</option><option>60</option></select></label></div>
+        <p class="panel-footnote">Filters and pagination apply to loaded report records (up to 1,000). PWA requests use their own receipt list above.</p>
+      </article>
+    </div>
+    <aside class="panel incident-detail" id="selected-report" aria-label="Selected report details"><div class="empty-state">Select a report or PWA SOS to inspect its receipt and available telemetry.</div></aside>
+  </div>
+</section>

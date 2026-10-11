@@ -1,0 +1,37 @@
+{% from 'components/ui.html' import stat_card, map_toolbar %}
+<section class="view active" id="view-dashboard" data-view-panel="dashboard" aria-label="Dashboard">
+  <div class="stats-grid" aria-label="Report summary">
+    {{ stat_card('stat-total', 'Total reports', 'All received report records', 'i-report') }}
+    {{ stat_card('stat-active', 'Recently active nodes', 'Report activity within 5 min', 'i-antenna', 'healthy') }}
+    {{ stat_card('stat-critical', 'Critical reports', 'SOS or critical condition', 'i-warning', 'critical') }}
+    {{ stat_card('stat-unhandled', 'Open reports', 'Handling status: BARU', 'i-report', 'attention') }}
+  </div>
+  <div class="dashboard-grid">
+    <article class="panel network-panel">
+      <div class="panel-header"><div><h2>Live network health</h2><p>Device heartbeat and report activity, shown separately</p></div><button class="text-button" data-go-view="nodes">Node details <svg><use href="#i-chevron"/></svg></button></div>
+      <div id="gateway-summary" class="gateway-summary"><div class="loading-state">Loading Gateway status…</div></div>
+      <div class="compact-node-grid" id="dashboard-nodes"><div class="loading-state">Loading node activity…</div></div>
+      <p class="panel-footnote">Logical overview · exact relay path unavailable. “Unknown” means no device heartbeat has been observed.</p>
+    </article>
+    <article class="panel activity-panel">
+      <div class="panel-header"><div><h2>Incident activity</h2><p>Report records received · last 6 hours</p></div><span class="chart-legend"><i></i>Received reports</span></div>
+      <div class="activity-chart" id="dashboard-activity"><div class="loading-state">Loading activity…</div></div>
+    </article>
+    <article class="panel full-width">
+      <div class="panel-header"><div><h2>Latest SOS reports</h2><p>Portal and PWA SOS records received by this server</p></div><button class="text-button" data-go-view="reports">View all <svg><use href="#i-chevron"/></svg></button></div>
+      <div id="dashboard-mobile-sos" class="table-wrap"><div class="loading-state">Checking for SOS…</div></div>
+    </article>
+    <article class="panel full-width live-map-panel">
+      <div class="panel-header"><div><h2>Live Rescue Map</h2><p>Latest Field Node and mobile-user GPS positions</p></div><button class="text-button" data-go-view="map">Open map <svg><use href="#i-chevron"/></svg></button></div>
+      {{ map_toolbar('dashboard-map', true) }}
+      <div class="map-canvas-wrap">
+        <div class="leaflet-map compact" id="dashboard-map" aria-label="Live RescueNet location map"></div>
+        <div class="map-empty-overlay" id="dashboard-map-empty" hidden></div>
+      </div>
+    </article>
+    <article class="panel full-width">
+      <div class="panel-header"><div><h2>Recent Emergency Reports</h2><p>Most recent portal and device report records</p></div><button class="text-button" data-go-view="reports">View all <svg><use href="#i-chevron"/></svg></button></div>
+      <div class="table-wrap" id="recent-reports"><div class="loading-state">Loading reports…</div></div>
+    </article>
+  </div>
+</section>

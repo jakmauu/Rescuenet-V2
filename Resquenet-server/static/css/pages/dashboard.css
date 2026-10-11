@@ -1,0 +1,38 @@
+.dashboard-grid { grid-template-columns: minmax(0,1.55fr) minmax(0,1fr); gap: 18px; }
+.network-panel, .activity-panel { min-height: 335px; }
+.gateway-summary { min-height: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; margin-bottom: 18px; gap: 12px; }
+.gateway-state { min-width: 220px; padding: 10px 16px; background: #f9fbff; border-radius: 7px; }
+.gateway-state strong { font-size: 14px; display: flex; gap: 12px; align-items: center; }
+.gateway-state span { font-size: 11px; }
+.gateway-icon { border-radius: 8px; color: var(--blue-500); background: #eaf5ff; width: 38px; height: 38px; }
+.gateway-icon svg { width: 22px; height: 22px; }
+.gateway-diagnostics { color: var(--muted); font-size: 11px; }
+.gateway-diagnostics summary { cursor: pointer; padding: 8px; }
+.gateway-diagnostics[open] { width: 100%; }
+.gateway-details strong { font-size: 11px; }
+.compact-node-grid { grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: 12px; }
+.compact-node { display: block; color: var(--text); text-align: left; padding: 14px; background: #f9fbfe; border-radius: 7px; cursor: pointer; font: inherit; }
+.compact-node.online { background: #f3fbf8; border-color: #d0efdf; }
+.compact-node.stale { background: #fffbf3; border-color: #ffe6bd; }
+.compact-node-header strong { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.compact-node-header svg { width: 18px; height: 18px; color: var(--blue-500); }
+.compact-node.online svg { color: var(--success); }
+.compact-node.stale svg { color: var(--warning); }
+.compact-node-header { flex-wrap: wrap; }
+.node-meta { font-size: 11px; gap: 12px 9px; }
+.node-meta span > span { color: var(--muted); font-size: 10px; text-transform: none; }
+.node-meta strong { font-size: 11px; line-height: 1.6; }
+.node-meta > span:last-child { grid-column: 1 / -1; }
+.activity-chart { margin-top: 30px; min-height: 225px; }
+.chart { height: 225px; }
+.chart-bars { gap: 12px; }
+.chart-bar { background: linear-gradient(#2697ff,#0878e4); width: min(35px,75%); }
+.chart-value { font-size: 11px; font-weight: 700; color: var(--text); }
+.chart-label { font-size: 10px; }
+.chart-y { font-size: 10px; }
+.chart-legend { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.chart-legend i { width: 8px; height: 8px; background: var(--blue-500); border-radius: 50%; }
+.sos-table .sos-row:first-child { background: #fff0f2; box-shadow: inset 2px 0 var(--danger); }
+.live-map-panel .leaflet-map.compact { height: 260px; }
+@media (max-width: 1150px) { .dashboard-grid { grid-template-columns: 1fr; } .network-panel, .activity-panel { min-height: 0; } }
+@media (max-width: 600px) { .compact-node-grid { grid-template-columns: 1fr; } .activity-chart { margin-top: 10px; } }

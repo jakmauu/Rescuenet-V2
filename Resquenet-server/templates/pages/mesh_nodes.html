@@ -1,0 +1,20 @@
+<section class="view" id="view-nodes" data-view-panel="nodes" aria-label="Mesh Nodes">
+  <div class="nodes-layout">
+    <article class="panel topology-panel">
+      <div class="panel-header"><div><h2>Logical associations <span class="topology-subtitle">· route not measured</span></h2><p id="mesh-animation-note">Line animation reflects reported node status, not packet path</p></div><div class="node-legend" aria-label="Reported device status"><span class="success">Online</span><span class="warning">Stale</span><span>Unknown</span><span class="logical-link-key">Logical link</span></div></div>
+      <div class="topology" id="mesh-topology" aria-describedby="mesh-animation-note">
+        <img class="mesh-mountains" src="{{ url_for('static', filename='img/mesh-mountains.svg') }}" alt="" aria-hidden="true" draggable="false">
+        <svg class="mesh-links" id="mesh-links" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"></svg>
+        <div class="mesh-gateway" id="mesh-gateway">
+          <span class="mesh-halo" aria-hidden="true"></span>
+          <div class="topology-device gateway" id="mesh-gateway-device"><svg aria-hidden="true"><use href="#i-antenna"/></svg><strong>Gateway</strong><span id="topology-gateway-state">Unknown</span><small>USB serial interface</small></div>
+        </div>
+        <div class="topology-nodes" id="topology-nodes"><div class="empty-state">Loading observed nodes…</div></div>
+      </div>
+      <p class="panel-footnote">Field Node status comes from heartbeat observations. Gateway status is USB serial readiness. Lines show logical associations only; relay routes and packet traffic are not measured.</p>
+    </article>
+    <article class="panel node-detail-panel"><div id="node-detail-grid"><div class="empty-state">Select an observed node to view its telemetry.</div></div></article>
+  </div>
+  <div class="stats-grid node-stats" id="node-summary"><div class="loading-state">Loading network summary…</div></div>
+  <article class="panel"><div class="panel-header"><div><h2>Node roster</h2><p>Observed Field Nodes and their current device status</p></div></div><div class="table-wrap" id="node-roster"><div class="loading-state">Loading nodes…</div></div></article>
+</section>

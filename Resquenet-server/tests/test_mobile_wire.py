@@ -9,7 +9,8 @@ import pytest
 
 import config
 from services import database
-from services.mobile_wire import WireError, ack_serial_line, crc16, decode_mobile, parse_mobile_serial, request_key
+from services.mobile_wire import (WireError, ack_serial_line, crc16, decode_mobile,
+                                  parse_mobile_serial, parse_legacy_serial, request_key)
 from services.mqtt_service import MQTTService
 from services.serial_bridge import SerialBridge, classify_serial_line, parse_report_line
 
@@ -30,6 +31,13 @@ def frame(kind=2, gps=True, name="Riko", *, event_time=1700000000, fix_time=1699
             struct.pack(">IIiiH", event_time, fix_time if gps else 0,
                         -6364821 if gps else 0, 106828913 if gps else 0,
                         68 if gps else 0xFFFF) + bytes((len(encoded_name),)) + encoded_name)
+    return body + struct.pack(">H", crc16(body))
+
+
+def legacy_frame(packet_id=4097, flags=3, condition=b"KRITIS", message=b"SOS-TOMBOL-PORTAL"):
+    body = (b"RNL1" + struct.pack(">HBBBiiBB", packet_id, 1, flags, 1,
+                                   -6364821, 106828913, len(condition), len(message))
+            + condition + message)
     return body + struct.pack(">H", crc16(body))
 
 
@@ -72,6 +80,75 @@ def test_legacy_and_ack_compatibility():
     assert parse_report_line(legacy)["rssi"] is None
     assert classify_serial_line(legacy)[0] == "report"
     assert ack_serial_line(KEY.hex()) == b"RNACK1,00112233445566778899aabbccddeeff,STORED\n"
+
+
+def test_gateway_legacy_csv_reaches_mqtt_and_database(tmp_path):
+    path = tmp_path / "legacy.db"
+    database.init_database(path)
+    bridge = SerialBridge(serial_port="COM-test")
+    backend = MQTTService(path)
+    published = []
+    bridge._publish_json = lambda topic, payload, **kwargs: published.append((topic, payload)) or type("Result", (), {"rc": 0})()
+
+    # Exact 13-column record emitted by gateway_node after decoding RNL1.
+    bridge.handle_line("-,-,4097,1,0,5,-6.364821,106.828913,1,KRITIS,1,1,SOS-TOMBOL-PORTAL")
+    report_topic, report = next((topic, payload) for topic, payload in published
+                                if topic == config.MQTT_REPORT_TOPIC)
+    assert report_topic == config.MQTT_REPORT_TOPIC
+    assert report["pkt_id"] == 4097
+    assert report["src_id"] == 1
+    assert report["hop"] == 0
+
+    backend._handle_report(report)
+    reports = database.query_reports(database_path=path)
+    assert len(reports) == 1
+    assert reports[0]["pesan"] == "SOS-TOMBOL-PORTAL"
+
+
+def test_mesh_legacy_report_commit_ack_and_duplicate_retry(tmp_path):
+    path = tmp_path / "legacy-ack.db"
+    database.init_database(path)
+    packet = legacy_frame()
+    key = request_key(packet)
+    line = f"RNL1,{key},31452,1,{packet.hex()}"
+    parsed = parse_legacy_serial(line, received_at=1700000001)
+    assert parsed["delivery_key"] == key
+    assert parsed["src_id"] == 1 and parsed["hop"] == 0
+    assert parsed["pesan"] == "SOS-TOMBOL-PORTAL"
+    assert classify_serial_line(line)[0] == "report"
+
+    bridge = SerialBridge(serial_port="COM-test")
+    backend = MQTTService(path)
+    published = []
+    bridge._publish_json = lambda topic, payload, **kwargs: published.append((topic, payload)) or type("Result", (), {"rc": 0})()
+    bridge.handle_line(line)
+    topic, report = published[0]
+    assert topic == config.MQTT_REPORT_TOPIC
+    ack_messages = []
+    backend.client.publish = lambda topic, payload, **kwargs: ack_messages.append((topic, json.loads(payload))) or type("Result", (), {"rc": 0})()
+    backend._handle_report(report)
+    backend._handle_report(report)  # retransmission after a lost ACK must not duplicate rows
+    rows = database.query_reports(database_path=path)
+    assert len(rows) == 1
+    assert rows[0]["delivery_key"] == key
+    assert len(ack_messages) == 2
+    assert all(topic == config.MQTT_REPORT_ACK_TOPIC and payload ==
+               {"request_key": key, "status": "STORED"} for topic, payload in ack_messages)
+
+    message = type("Message", (), {"topic": config.MQTT_REPORT_ACK_TOPIC,
+                                    "payload": json.dumps(ack_messages[0][1]).encode()})()
+    bridge._on_mqtt_message(None, None, message)
+    assert ack_serial_line(bridge._ack_queue.get_nowait()) == f"RNACK1,{key},STORED\n".encode()
+
+
+def test_legacy_serial_rejects_bad_crc_or_key():
+    packet = legacy_frame()
+    key = request_key(packet)
+    with pytest.raises(WireError):
+        parse_legacy_serial(f"RNL1,{'00' * 16},31452,1,{packet.hex()}")
+    damaged = packet[:-1] + bytes((packet[-1] ^ 1,))
+    with pytest.raises(WireError):
+        parse_legacy_serial(f"RNL1,{key},31452,1,{damaged.hex()}")
 
 
 def test_legacy_and_ack_binary_golden():

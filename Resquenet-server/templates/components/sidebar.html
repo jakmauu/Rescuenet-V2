@@ -1,0 +1,20 @@
+    <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <img src="{{ url_for('static', filename='img/branding/rescuenet-logo.png') }}" width="38" height="38" alt="">
+        <div><strong>RescueNet</strong><span>Command Center</span></div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="dashboard"><svg><use href="#i-grid"/></svg><span>Dashboard</span></button>
+        <button class="nav-item" data-view="reports"><svg><use href="#i-report"/></svg><span>Emergency Reports</span></button>
+        <button class="nav-item" data-view="map"><svg><use href="#i-map"/></svg><span>GPS Map</span></button>
+        <button class="nav-item" data-view="nodes"><svg><use href="#i-antenna"/></svg><span>Mesh Nodes</span></button>
+        <button class="nav-item" data-view="system"><svg><use href="#i-server"/></svg><span>System Status</span></button>
+      </nav>
+
+      <div class="local-access">
+        <span>Local access</span>
+        <strong>{{ request.host }}</strong>
+        <small>Ethernet command network</small>
+      </div>
+    </aside>

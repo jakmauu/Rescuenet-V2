@@ -6,6 +6,14 @@ credentials.json
 *.jks
 *.keystore
 
+# Local TLS certificates, private keys, and generated Field Node header
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+field_node/tls_secrets.h
+
 # Python runtime, cache, and local data
 .venv/
 venv/
@@ -50,3 +58,7 @@ desktop.ini
 
 # Local map preview screenshot, not a runtime asset
 Resquenet-server/dashboard-map-preview.png
+
+# Local dashboard review/deployment packages (not runtime source)
+artifacts/rescuenet-dashboard-ui*.zip
+artifacts/dashboard-previews/

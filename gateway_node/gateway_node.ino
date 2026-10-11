@@ -5,13 +5,14 @@
 #include <loramesher.hpp>
 #include <memory>
 #include <vector>
+#include <mbedtls/sha256.h>
 #include "RescueNetWire.h"
 using namespace loramesher;
 XPowersAXP2101 PMU;
 std::unique_ptr<LoraMesher> mesh;
 struct Rx { AddressType source; uint8_t size; uint8_t data[rnwire::MAX_PACKET]; };
 QueueHandle_t incoming;
-struct PendingAck { uint8_t key[16]; AddressType source; uint32_t seenMs; bool used; };
+struct PendingAck { uint8_t key[16]; AddressType source; uint32_t seenMs; uint32_t lastAckAttempt; uint32_t ackBackoffMs; bool used; bool ackPending; };
 PendingAck pending[24]{};
 char serialLine[80]{};
 size_t serialLength = 0;
@@ -26,12 +27,27 @@ int routeHops(AddressType source) {
   return -1;
 }
 void remember(const uint8_t key[16], AddressType source) {
-  size_t slot = 0;
+  size_t slot = 24;
   for (size_t i = 0; i < 24; ++i) {
-    if (pending[i].used && !memcmp(pending[i].key, key, 16)) { slot = i; break; }
-    if (!pending[i].used || uint32_t(millis() - pending[i].seenMs) > uint32_t(millis() - pending[slot].seenMs)) slot = i;
+    if (pending[i].used && !memcmp(pending[i].key, key, 16)) {
+      pending[i].source = source;
+      pending[i].seenMs = millis();
+      return;
+    }
+    if (!pending[i].used && slot == 24) slot = i;
   }
-  memcpy(pending[slot].key, key, 16); pending[slot].source = source; pending[slot].seenMs = millis(); pending[slot].used = true;
+  if (slot == 24) {
+    slot = 0;
+    for (size_t i = 1; i < 24; ++i)
+      if (uint32_t(millis() - pending[i].seenMs) > uint32_t(millis() - pending[slot].seenMs)) slot = i;
+  }
+  memcpy(pending[slot].key, key, 16);
+  pending[slot].source = source;
+  pending[slot].seenMs = millis();
+  pending[slot].lastAckAttempt = 0;
+  pending[slot].ackBackoffMs = 2000;
+  pending[slot].used = true;
+  pending[slot].ackPending = false;
 }
 void processReceived(const Rx &item) {
   rnwire::Mobile mobile;
@@ -51,12 +67,32 @@ void processReceived(const Rx &item) {
   if (rnwire::decodeLegacy(item.data, item.size, legacy)) {
     int hops = routeHops(item.source);
     int hopDisplay = (hops > 0) ? (hops - 1) : 0;
-    // LoRaMesher's application callback provides no measured RSSI/SNR.
-    Serial.printf("-,-,%u,%u,%d,5,%.6f,%.6f,%u,%s,%u,%u,%s\n",
-      unsigned(legacy.packetId), unsigned(legacy.node), hopDisplay,
-      (legacy.flags & 1) ? legacy.latE6 / 1000000.0 : 0.0,
-      (legacy.flags & 1) ? legacy.lonE6 / 1000000.0 : 0.0,
-      unsigned(legacy.flags & 1), legacy.condition, unsigned(legacy.count), unsigned((legacy.flags >> 1) & 1), legacy.message);
+    uint8_t digest[32];
+    if (mbedtls_sha256(item.data, item.size, digest, 0) != 0) {
+      Serial.println("[DROP] cannot calculate legacy delivery key");
+      return;
+    }
+    uint8_t key[16]; memcpy(key, digest, sizeof(key));
+    remember(key, item.source);
+    char keyHex[33], payloadHex[rnwire::MAX_PACKET * 2 + 1];
+    rnwire::hexKey(key, keyHex); rnwire::hexBytes(item.data, item.size, payloadHex);
+    Serial.printf("[LEGACY RX] uptime_ms=%lu key=%s packet_id=%u field_node=%u mesh_source=%u relays=%d bytes=%u\n",
+      (unsigned long)millis(), keyHex, unsigned(legacy.packetId), unsigned(legacy.node), unsigned(item.source), hopDisplay, unsigned(item.size));
+    Serial.printf("RNL1,%s,%u,", keyHex, unsigned(item.source));
+    if (hops < 0) Serial.print('-'); else Serial.print(hops);
+    Serial.print(','); Serial.println(payloadHex);
+    return;
+  }
+  rnwire::Heartbeat heartbeat;
+  if (rnwire::decodeHeartbeat(item.data, item.size, heartbeat)) {
+    int hops = routeHops(item.source);
+    Serial.printf("RNH1,%u,%u,", unsigned(heartbeat.node), unsigned(item.source));
+    if (hops < 0) Serial.print('-'); else Serial.print(hops);
+    Serial.printf(",%u,%u,%u\n", unsigned(heartbeat.uptimeSeconds),
+      unsigned((heartbeat.meshSynced ? 1 : 0) | (heartbeat.gatewayFound ? 2 : 0)),
+      unsigned(heartbeat.pendingCount));
+    Serial.printf("[HEARTBEAT RX] node=%u source=%u pending=%u\n",
+      unsigned(heartbeat.node), unsigned(item.source), unsigned(heartbeat.pendingCount));
     return;
   }
   Serial.println("[DROP] invalid application frame");
@@ -71,14 +107,35 @@ void processAckLine() {
   Serial.printf("[SERVER ACK RX] request=%s\n", serialLine + 7);
   for (auto &entry : pending) {
     if (!entry.used || memcmp(entry.key, key, 16)) continue;
-    rnwire::Ack ack{}; memcpy(ack.key, key, 16); ack.status = 1;
-    uint8_t packet[rnwire::MAX_PACKET]; size_t n = rnwire::encodeAck(ack, packet);
-    if (!mesh->IsReadyToSend(entry.source)) return;
-    Result result = mesh->Send(entry.source, std::vector<uint8_t>(packet, packet + n));
-    if (result) Serial.printf("[MESH ACK TX] request=%s dst=%u\n", serialLine + 7, unsigned(entry.source));
+    entry.ackPending = true;
+    entry.lastAckAttempt = 0;
     return;
   }
   Serial.println("[SERVER ACK RX] mapping unavailable; field retry will restore it");
+}
+void flushPendingAcks() {
+  if (!mesh) return;
+  for (auto &entry : pending) {
+    if (!entry.used || !entry.ackPending) continue;
+    if (entry.lastAckAttempt && uint32_t(millis() - entry.lastAckAttempt) < entry.ackBackoffMs) continue;
+    if (mesh->GetTxQueueSize() >= 8) continue;
+    entry.lastAckAttempt = millis();
+    rnwire::Ack ack{}; memcpy(ack.key, entry.key, 16); ack.status = 1;
+    uint8_t packet[rnwire::MAX_PACKET]; size_t n = rnwire::encodeAck(ack, packet);
+    Result result = mesh->Send(entry.source, std::vector<uint8_t>(packet, packet + n));
+    char keyHex[33]; rnwire::hexKey(entry.key, keyHex);
+    if (result) {
+      entry.ackPending = false;
+      entry.ackBackoffMs = 2000;
+      Serial.printf("[MESH ACK TX] request=%s dst=%u\n", keyHex, unsigned(entry.source));
+    } else {
+      entry.ackBackoffMs = entry.ackBackoffMs < 2000 ? 2000 :
+        entry.ackBackoffMs >= 10000 ? 10000 : entry.ackBackoffMs * 2;
+      Serial.printf("[MESH ACK WAIT] request=%s dst=%u reason=%s\n",
+        keyHex, unsigned(entry.source), result.GetErrorMessage().c_str());
+    }
+    return; // At most one ACK enqueue attempt per loop iteration.
+  }
 }
 void readSerial() {
   while (Serial.available()) {
@@ -107,6 +164,7 @@ void setup() {
 }
 void loop() {
   readSerial();
+  flushPendingAcks();
   if (mesh && incoming) { Rx item; for (int i = 0; i < 4 && xQueueReceive(incoming, &item, 0) == pdTRUE; ++i) processReceived(item); }
   delay(10);
 }

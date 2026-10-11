@@ -359,6 +359,13 @@ svg { width: 1.15em; height: 1.15em; fill: currentColor; }
 
 .loading-state, .empty-state, .error-state { display: grid; place-items: center; min-height: 110px; padding: 18px; color: var(--subtle); font-size: 11px; text-align: center; }
 .error-state { color: var(--danger); background: var(--danger-bg); border: 1px solid #f1d2d5; border-radius: 4px; }
+.mobile-sos-list { display: grid; gap: 9px; }
+.mobile-sos-item { padding: 12px 14px; border: 1px solid #f2c9cc; border-left: 3px solid var(--danger); border-radius: 5px; background: #fffafa; }
+.mobile-sos-heading, .mobile-sos-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mobile-sos-heading { color: var(--navy-800); font-size: 12px; }
+.mobile-sos-item p { margin: 7px 0; color: var(--text); font-size: 11px; }
+.mobile-sos-meta, .mobile-sos-item small { color: var(--subtle); font-size: 10px; }
+.mobile-sos-item small { display: block; margin-top: 7px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .table-wrap { width: 100%; overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; white-space: nowrap; }

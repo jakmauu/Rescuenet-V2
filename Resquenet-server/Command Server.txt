@@ -1,0 +1,21 @@
+COMMAND UNTUK SERVER RESCUENET:
+
+TERMINAL 1:
+sudo systemctl start mosquitto
+systemctl is-active mosquitto
+
+TERMINAL 2:
+cd ~/RescueNET/Resquenet-server
+source .venv/bin/activate
+python app.py
+
+TERMINAL 3:
+cd ~/RescueNET/Resquenet-server
+source .venv/bin/activate
+python -m services.serial_bridge
+
+CEK WIFI:
+nmcli connection show
+
+CEK LOG FIELD NODE:
+& 'D:\arduino-cli.exe' monitor --port COM19 --config baudrate=115200

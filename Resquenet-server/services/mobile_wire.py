@@ -111,11 +111,89 @@ def parse_mobile_serial(line: str, *, received_at: float | None = None) -> dict[
     return event
 
 
+def parse_legacy_serial(line: str, *, received_at: float | None = None) -> dict[str, Any]:
+    """Decode the mesh RNL1 frame carried in the Gateway's USB envelope."""
+    parts = line.strip().split(",")
+    if len(parts) != 5 or parts[0] != "RNL1":
+        raise WireError("invalid legacy serial envelope")
+    key, mesh_source_s, hops_s, payload_hex = parts[1:]
+    if not _HEX32.fullmatch(key) or not payload_hex or len(payload_hex) > MAX_PAYLOAD * 2 or len(payload_hex) % 2:
+        raise WireError("invalid legacy serial key/payload")
+    try:
+        mesh_source = int(mesh_source_s)
+        hops = int(hops_s) if hops_s != "-" else None
+        payload = bytes.fromhex(payload_hex)
+    except ValueError as exc:
+        raise WireError("invalid legacy serial number/hex") from exc
+    if not 1 <= mesh_source <= 65535 or (hops is not None and not 1 <= hops <= 20):
+        raise WireError("invalid mesh source/hops")
+    body = _check_crc(payload)
+    if body[:4] != b"RNL1" or len(body) < 19:
+        raise WireError("unknown legacy frame or truncated header")
+    packet_id = int.from_bytes(body[4:6], "big")
+    node, flags, count = body[6:9]
+    lat_e6 = int.from_bytes(body[9:13], "big", signed=True)
+    lon_e6 = int.from_bytes(body[13:17], "big", signed=True)
+    condition_length, message_length = body[17:19]
+    if (not packet_id or not 1 <= node <= 15 or flags & ~0x03 or not count
+            or not 1 <= condition_length <= 10 or message_length > 70
+            or len(payload) != 21 + condition_length + message_length):
+        raise WireError("invalid legacy frame fields/length")
+    try:
+        condition = body[19:19 + condition_length].decode("utf-8", "strict")
+        message = body[19 + condition_length:].decode("utf-8", "strict")
+    except UnicodeDecodeError as exc:
+        raise WireError("invalid UTF-8 in legacy report") from exc
+    if not condition or any(char in condition for char in ",\r\n"):
+        raise WireError("invalid legacy condition")
+    has_gps = bool(flags & 1)
+    if has_gps and (not -90_000_000 <= lat_e6 <= 90_000_000
+                    or not -180_000_000 <= lon_e6 <= 180_000_000):
+        raise WireError("legacy coordinates out of range")
+    if hashlib.sha256(payload).digest()[:16].hex() != key:
+        raise WireError("legacy delivery key mismatch")
+    return {
+        "rssi": None, "snr": None, "pkt_id": packet_id, "src_id": node,
+        "hop": max(0, hops - 1) if hops is not None else 0, "max_hop": 5,
+        "lat": lat_e6 / 1_000_000 if has_gps else 0.0,
+        "lon": lon_e6 / 1_000_000 if has_gps else 0.0,
+        "has_gps": int(has_gps), "kondisi": condition, "jumlah": count,
+        "sos": int(bool(flags & 2)), "pesan": message, "delivery_key": key,
+        "mesh_source": mesh_source,
+        "received_at": received_at if received_at is not None else time.time(),
+    }
+
+
 def parse_ack(payload: dict[str, Any]) -> str:
     key = payload.get("request_key")
     if payload.get("status") != "STORED" or not isinstance(key, str) or not _HEX32.fullmatch(key):
         raise WireError("invalid STORED ACK")
     return key
+
+
+def parse_heartbeat_serial(line: str, *, received_at: float | None = None) -> dict[str, Any]:
+    """Parse the Gateway's validated RNH1 heartbeat envelope."""
+    parts = line.strip().split(",")
+    if len(parts) != 7 or parts[0] != "RNH1":
+        raise WireError("invalid heartbeat serial envelope")
+    try:
+        node_id, mesh_source = int(parts[1]), int(parts[2])
+        hops = None if parts[3] == "-" else int(parts[3])
+        uptime, flags, pending = int(parts[4]), int(parts[5]), int(parts[6])
+    except ValueError as exc:
+        raise WireError("invalid heartbeat number") from exc
+    if not 1 <= node_id <= 15 or not 1 <= mesh_source <= 65535:
+        raise WireError("invalid heartbeat node or mesh source")
+    if hops is not None and not 1 <= hops <= 20:
+        raise WireError("invalid heartbeat hop count")
+    if uptime <= 0 or not 0 <= flags <= 3 or not 0 <= pending <= 65535:
+        raise WireError("invalid heartbeat fields")
+    return {
+        "node_id": node_id, "mesh_source": mesh_source, "mesh_hops": hops,
+        "uptime_seconds": uptime, "mesh_synced": bool(flags & 1),
+        "gateway_found": bool(flags & 2), "pending_count": pending,
+        "received_at": received_at if received_at is not None else time.time(),
+    }
 
 
 def ack_serial_line(request_key_hex: str) -> bytes:

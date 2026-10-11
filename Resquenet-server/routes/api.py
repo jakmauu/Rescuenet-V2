@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
+import config
 from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
@@ -15,6 +17,14 @@ from services.system_service import get_system_metrics
 
 LOGGER = logging.getLogger(__name__)
 api = Blueprint("api", __name__, url_prefix="/api")
+
+
+@api.after_request
+def disable_api_caching(response):
+    """Keep live dashboard API reads from being served by a browser cache."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 def _db_path():
@@ -196,11 +206,15 @@ def _service_or_default(service: str, default_status: str = "not_available"):
     state = database.get_service_state(service, database_path=_db_path())
     if state is None:
         return {"status": default_status, "details": {}, "updated_at": None}
-    return {
-        "status": state.get("status") or default_status,
-        "details": state.get("details") or {},
-        "updated_at": state.get("updated_at"),
-    }
+    status = state.get("status") or default_status
+    updated_at = state.get("updated_at")
+    details = state.get("details") or {}
+    if service == "gateway_serial" and updated_at is not None:
+        age = max(0, int(time.time() - float(updated_at)))
+        details["status_age_seconds"] = age
+        if age >= config.GATEWAY_STATUS_STALE_SECONDS:
+            status = "stale"
+    return {"status": status, "details": details, "updated_at": updated_at}
 
 
 @api.get("/health")

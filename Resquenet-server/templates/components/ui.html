@@ -1,0 +1,18 @@
+{% macro stat_card(id, label, caption, icon, tone='') -%}
+<article class="stat-card {{ tone }}">
+  <span class="stat-icon"><svg aria-hidden="true"><use href="#{{ icon }}"/></svg></span>
+  <div><span class="stat-label">{{ label }}</span><strong id="{{ id }}">—</strong><small>{{ caption }}</small></div>
+</article>
+{%- endmacro %}
+{% macro map_toolbar(map_id, compact=false) -%}
+<div class="map-toolbar" data-map-toolbar>
+  <div class="map-filters" role="group" aria-label="Map marker filter">
+    <button class="map-filter active" data-map-filter="all" aria-pressed="true">All</button>
+    <button class="map-filter" data-map-filter="field_node" aria-pressed="false">Field Nodes</button>
+    <button class="map-filter" data-map-filter="mobile_user" aria-pressed="false">Mobile Users</button>
+    <button class="map-filter sos-filter" data-map-filter="critical" aria-pressed="false"><svg aria-hidden="true"><use href="#i-warning"/></svg>SOS</button>
+  </div>
+  <div class="map-live-status"><i></i><span id="{{ map_id }}-status">Waiting for GPS data</span></div>
+  <button class="map-fit-button" data-map-fit="{{ map_id }}" type="button">Fit markers</button>
+</div>
+{%- endmacro %}

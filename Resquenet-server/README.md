@@ -197,7 +197,7 @@ http://10.10.10.22:5000
 The RescueNet data path remains local. For the live street-map background, keep an
 internet connection active on the device running the browser. If internet is lost,
 the locally stored GPS markers continue to refresh but new OpenStreetMap tiles may
-not load. Leaflet 1.9.4 is loaded from its official documented CDN URL.
+not load. Leaflet 1.9.4 is served from the project's local vendor assets.
 
 ## Gateway Serial protocol
 
@@ -242,7 +242,14 @@ there is deliberately no unique constraint on `pkt_id` or `(src_id, pkt_id)`.
 - `hop` is a count. The current packet has no full relay history, so the UI never
   invents an exact node-to-node path.
 - `recently_active` means a report was seen within the configured threshold (default
-  300 seconds). Without firmware heartbeat, it is not proof that a node is online.
+  300 seconds); it is report activity, not device liveness. New firmware sends an
+  additive RNH1 heartbeat every 60 seconds while its report and mesh queues are idle.
+  `/api/nodes` exposes `device_status` (`online`, `stale`, or `unknown`), last
+  heartbeat, last Gateway contact, mesh sync, Gateway reachability, and pending count.
+  The online timeout defaults to 150 seconds. Existing nodes without RNH1 stay
+  `unknown`; their recent reports do not fabricate an online heartbeat.
+- Gateway serial status is stale when its retained update exceeds 20 seconds. The
+  bridge refreshes that status every five seconds while USB serial is open.
 
 ## REST API
 
@@ -360,8 +367,9 @@ logs, subscribe to `rescuenet/#`, and verify Gateway lines match the 13-field
 contract. RescueNet never generates startup sample reports.
 
 **GPS markers appear but the basemap is blank** — the local position API is working,
-but the browser cannot reach the Leaflet CDN or OpenStreetMap tile server. Check the
-browser device's internet/DNS connection and reload. Do not bulk-download or prefetch
+but the browser cannot reach the configured OpenStreetMap tile server. Check the
+browser device's internet/DNS connection and reload. If the library itself is missing,
+check that `static/vendor/leaflet-1.9.4` was copied. Do not bulk-download or prefetch
 tiles from the public OpenStreetMap service.
 
 **Gateway connected but not ready** — USB Serial is open but no `GATEWAY_READY` has
@@ -385,3 +393,12 @@ Final field validation still requires the target Raspberry Pi and T-Beam Gateway
 4. Actual LoRa reception, multi-hop hop counts, Gateway RX RSSI/SNR, and report GPS.
 5. Raspberry Pi CPU temperature exposure and wired access from `10.10.10.1`.
 6. Presentation-resolution and small-screen visual verification in the target browser.
+
+## Monitoring dashboard UI redesign
+
+The dashboard retains its existing API, polling, ingestion and Leaflet map behavior,
+with modular page renderers/templates and local UI assets. See
+[Dashboard UI setup and Raspberry Pi transfer](docs/DASHBOARD_UI_SETUP.md) for the
+safe preview, test commands, UI-only ZIP packaging, backup/update and validation.
+Leaflet 1.9.4 is now served locally from `static/vendor`; only configured map tiles
+may require internet. A CDN connection is no longer necessary to load the library.

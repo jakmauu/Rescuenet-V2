@@ -1,0 +1,18 @@
+{% from 'components/ui.html' import map_toolbar %}
+<section class="view" id="view-map" data-view-panel="map" aria-label="GPS Map">
+  <article class="panel map-toolbar-panel">{{ map_toolbar('full-map') }}</article>
+  <div class="map-layout">
+    <article class="panel map-panel">
+      <div class="map-canvas-wrap">
+        <div class="leaflet-map large" id="full-map" aria-label="Full live RescueNet location map"></div>
+        <div class="map-empty-overlay" id="full-map-empty" hidden></div>
+        <div class="map-legend floating-legend" aria-label="Map legend"><span class="sos">SOS</span><span class="field">Field Node</span><span class="mobile">Mobile User</span><span class="gateway">Gateway</span></div>
+      </div>
+      <p class="panel-footnote">Positions refresh every 5 seconds. Online tiles need internet; locally received GPS markers continue to update. Lines show mobile-to-node association, not relay routes.</p>
+    </article>
+    <div class="map-side">
+      <article class="panel" id="selected-map-position"><div class="panel-header"><div><h2>Selected location</h2><p>Choose a marker or location below</p></div></div><div class="empty-state">Waiting for a valid GPS position.</div></article>
+      <article class="panel"><div class="panel-header"><div><h2>Latest locations</h2><p>Positions in the selected filter</p></div></div><div class="map-list" id="map-report-list"><div class="loading-state">Loading locations…</div></div></article>
+    </div>
+  </div>
+</section>

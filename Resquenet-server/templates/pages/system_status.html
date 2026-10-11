@@ -1,0 +1,20 @@
+        <section class="view" id="view-system" data-view-panel="system">
+          <div class="system-layout">
+            <article class="panel full-width">
+              <div class="panel-header"><div><h2>Service Status</h2><p>Real local service state reported by this Raspberry Pi server</p></div></div>
+              <div class="service-grid" id="service-grid"><div class="loading-state">Loading services…</div></div>
+            </article>
+            <article class="panel full-width">
+              <div class="panel-header"><div><h2>Raspberry Pi Resources</h2><p>Live host measurements; unsupported sensors display Not available</p></div></div>
+              <div class="metric-grid" id="metric-grid"><div class="loading-state">Loading system metrics…</div></div>
+            </article>
+            <article class="panel system-note">
+              <div class="panel-header"><div><h2>Off-Grid Operation</h2><p>Local services and network boundaries</p></div></div>
+              <dl class="definition-list"><div><dt>Dashboard</dt><dd>{{ request.host }}</dd></div><div><dt>MQTT broker</dt><dd>127.0.0.1:1883 (local only)</dd></div><div><dt>Gateway link</dt><dd>USB Serial · 115200 baud</dd></div><div><dt>Operator link</dt><dd>Ethernet · 10.10.10.0/24</dd></div></dl>
+            </article>
+            <article class="panel system-note">
+              <div class="panel-header"><div><h2>Telemetry Semantics</h2><p>How to interpret the operational data</p></div></div>
+              <ul class="plain-list"><li>Node state indicates recent report activity, not guaranteed connectivity.</li><li>RSSI/SNR describes the last LoRa reception at the Gateway.</li><li>GPS coordinates describe the submitted emergency report location.</li></ul>
+            </article>
+          </div>
+        </section>

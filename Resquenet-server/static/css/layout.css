@@ -1,0 +1,44 @@
+.sidebar { background: linear-gradient(160deg,#102c4a 0%,#0b2039 75%); }
+.brand { height: 86px; padding: 0 22px; gap: 13px; }
+.brand img { object-fit: contain; width: 42px; height: 42px; flex-basis: 42px; }
+.brand strong { font-size: 20px; letter-spacing: -.02em; }
+.brand span { color: #98d1ff; font-size: 11px; }
+.nav-list { padding: 18px 10px; gap: 7px; }
+.nav-item { min-height: 48px; font-size: 14px; color: #b7d1eb; border-radius: 5px; padding: 0 16px; gap: 14px; }
+.nav-item.active { background: linear-gradient(90deg,#164770,#163b61); font-weight: 650; }
+.nav-item.active::before { width: 4px; height: 35px; }
+.nav-item svg { width: 19px; height: 19px; }
+.local-access { padding: 16px; border-radius: 6px; }
+.local-access strong { font-size: 14px; }
+.local-access span { font-size: 10px; }
+.local-access small { font-size: 11px; }
+.topbar { min-height: 86px; padding: 16px 26px; background: rgba(255,255,255,.97); }
+.page-heading h1 { font-size: 26px; font-weight: 750; letter-spacing: -.025em; }
+.page-heading p { font-size: 13px; color: var(--muted); }
+.connection-state strong { font-size: 12px; }
+.connection-state span:not(.state-dot) { font-size: 11px; }
+.state-dot { width: 9px; height: 9px; }
+.topbar-actions { gap: 24px; }
+.content { padding: 22px 26px 30px; max-width: 1900px; margin: 0 auto; }
+.stats-grid { gap: 16px; margin-bottom: 18px; }
+.service-grid, .metric-grid { gap: 14px; }
+.service-card strong, .metric-card span { font-size: 12px; }
+.service-card { padding: 17px; border-radius: 8px; }
+.metric-card { padding: 17px; border-radius: 8px; }
+.metric-card strong { font-size: 24px; }
+.definition-list dt, .definition-list dd, .plain-list { font-size: 12px; }
+@media (max-width: 1200px) { :root { --sidebar-width: 214px; } .content { padding: 20px; } .topbar { padding-inline: 20px; } }
+@media (max-width: 980px) { .service-grid, .metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 760px) {
+  .topbar { min-height: 76px; padding: 13px 14px; }
+  .main { margin-left: 0; }
+  .content { padding: 14px; }
+  .page-heading h1 { font-size: 20px; }
+  .topbar-actions { gap: 10px; }
+  .connection-state > div { display: none; }
+  .mobile-menu { display: inline-flex; }
+  .stats-grid { gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

@@ -1,0 +1,92 @@
+.nodes-layout { grid-template-columns: minmax(0,1.55fr) minmax(320px,1fr); gap: 18px; margin-bottom: 18px; }
+.topology-panel .panel-header { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.topology-panel .panel-header > div:first-child { flex: 1 1 280px; }
+.topology-subtitle { font-size: 13px; font-weight: 400; white-space: nowrap; }
+.topology { isolation: isolate; min-height: 420px; padding: 32px 26px 40px; border-radius: 8px; background: radial-gradient(circle at 50% 26%,#d4f3fa66,transparent 40%), linear-gradient(160deg,#f8fcff,#eaf4fc); }
+.topology::before { content: ""; position: absolute; z-index: 1; inset: 0; background-image: linear-gradient(#b6d7ec26 1px,transparent 1px),linear-gradient(90deg,#b6d7ec26 1px,transparent 1px); background-size: 30px 30px; pointer-events: none; }
+.mesh-mountains { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center bottom; pointer-events: none; user-select: none; }
+.mesh-links { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.mesh-link { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 5 11; vector-effect: non-scaling-stroke; }
+.mesh-link--online { stroke: #1687ff; animation: mesh-link-flow 2.4s linear infinite; }
+.mesh-link--stale { stroke: #cf8b12; animation: mesh-link-stale 5.8s ease-in-out infinite; }
+.mesh-link--unknown { stroke: #8494a8; stroke-dasharray: 3 10; opacity: .7; }
+.mesh-gateway { position: relative; z-index: 3; width: 125px; margin: 0 auto; }
+.mesh-device-slot { position: relative; flex: 0 0 125px; }
+.mesh-halo { display: none; position: absolute; z-index: 0; left: 50%; top: 50%; width: 172px; height: 172px; border: 1px solid #24c99133; border-radius: 50%; background: #24c99108; transform: translate(-50%,-50%); pointer-events: none; }
+.mesh-halo::before, .mesh-halo::after { content: ""; position: absolute; inset: -16px; border: 1px solid #24c99126; border-radius: 50%; }
+.mesh-halo::after { inset: -32px; border-color: #24c99119; }
+.mesh-device-slot.online .mesh-halo, .mesh-gateway.active .mesh-halo { display: block; animation: mesh-halo-breathe 4.8s ease-in-out infinite; }
+.mesh-device-slot.stale .mesh-halo { display: block; border-color: #d7921726; background: #d7921705; }
+.mesh-device-slot.stale .mesh-halo::before, .mesh-device-slot.stale .mesh-halo::after { border-color: #d792171c; }
+.topology-device { width: 125px; min-height: 116px; padding: 12px; border-radius: 11px; color: var(--text); font: inherit; background: #fff; gap: 3px; }
+button.topology-device { cursor: pointer; }
+.topology-device svg { width: 30px; height: 30px; color: var(--subtle); }
+.topology-device strong { font-size: 12px; }
+.topology-device.online, .mesh-gateway.active .topology-device { border-color: #71d8ad; box-shadow: 0 6px 20px #12365a10; }
+.topology-device.online svg { color: var(--success); }
+.mesh-gateway.active .topology-device svg { color: var(--success); }
+.topology-device.stale { border-color: #e7bb69; }
+.topology-device.stale svg { color: var(--warning); }
+.topology-device.selected { outline: 2px solid #41a5ff; outline-offset: 5px; }
+.topology-device:focus-visible { outline: 3px solid #138efa; outline-offset: 6px; }
+.topology-device span { font-size: 10px; }
+.topology-device small { font-size: 10px; line-height: 1.4; color: var(--muted); }
+.topology-device .mesh-node-state { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.mesh-node-state::before { content: ""; width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #8494a8; }
+.online .mesh-node-state { color: var(--success); }
+.online .mesh-node-state::before { background: var(--success); }
+.stale .mesh-node-state { color: var(--warning); }
+.stale .mesh-node-state::before { background: var(--warning); }
+.topology-nodes { position: relative; z-index: 3; display: flex; justify-content: space-evenly; flex-wrap: wrap; gap: 32px 28px; inset: auto; margin-top: 124px; }
+.topology-nodes .topology-device { width: 100%; max-width: none; }
+.topology-nodes > .empty-state, .topology-nodes > .error-state { width: 100%; background: #ffffffb8; border-radius: 8px; }
+.node-legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 10px; }
+.node-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: #8998aa; }
+.node-legend span.success::before { background: var(--success); }
+.node-legend span.warning::before { background: #d79217; }
+.node-legend .logical-link-key::before { width: 20px; height: 0; border-radius: 0; background: none; border-top: 2px dashed #1687ff; vertical-align: middle; }
+.node-detail-panel .panel-header { flex-wrap: wrap; align-items: flex-start; }
+.selected-node-banner { display: flex; align-items: center; gap: 16px; padding: 17px; background: #f7faff; border: 1px solid var(--border); border-radius: 7px; }
+.selected-node-banner > span { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; color: var(--subtle); background: var(--neutral-bg); }
+.selected-node-banner.online > span { color: var(--success); background: var(--success-bg); }
+.selected-node-banner.stale > span { color: var(--warning); background: var(--warning-bg); }
+.selected-node-banner svg { width: 30px; height: 30px; }
+.selected-node-banner h3 { margin: 0; color: var(--navy-900); font-size: 19px; }
+.selected-node-banner small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.node-telemetry { margin: 13px 0 0; }
+.node-telemetry > div { display: grid; grid-template-columns: 1fr 1.1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf1f7; font-size: 12px; }
+.node-telemetry dt { color: var(--muted); }
+.node-telemetry dd { margin: 0; overflow-wrap: anywhere; color: var(--text); }
+.node-stats .stat-card strong { font-size: 23px; text-transform: capitalize; overflow-wrap: anywhere; }
+.node-stats .stat-icon { width: 40px; height: 40px; flex-basis: 40px; }
+@keyframes mesh-link-flow { to { stroke-dashoffset: -32; } }
+@keyframes mesh-link-stale {
+  0%, 100% { stroke-dashoffset: 0; opacity: .35; }
+  40% { stroke-dashoffset: -14; opacity: .85; }
+  70% { stroke-dashoffset: -18; opacity: .45; }
+}
+@keyframes mesh-halo-breathe {
+  0%, 100% { transform: translate(-50%,-50%) scale(.97); opacity: .65; }
+  50% { transform: translate(-50%,-50%) scale(1.03); opacity: 1; }
+}
+.view:not(.active) .mesh-link, .view:not(.active) .mesh-halo { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  #mesh-topology .mesh-link, #mesh-topology .mesh-halo { animation: none; }
+  #mesh-topology .mesh-link--stale { opacity: .75; }
+}
+@media (max-width: 1150px) { .nodes-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .topology { padding: 28px 8px 36px; min-height: 380px; }
+  .mesh-gateway { width: 112px; }
+  .mesh-gateway .topology-device { width: 100%; }
+  .topology-nodes { gap: 28px 12px; margin-top: 100px; }
+  .mesh-device-slot { flex-basis: 86px; }
+  .topology-nodes .topology-device { min-height: 110px; padding: 10px 5px; }
+  .mesh-device-slot .mesh-halo { width: 124px; height: 124px; }
+  .mesh-device-slot .mesh-halo::before { inset: -10px; }
+  .mesh-device-slot .mesh-halo::after { inset: -20px; }
+  .topology-device strong { font-size: 10px; }
+  .topology-device small { font-size: 9px; }
+  .topology-subtitle { font-size: 12px; }
+  .node-stats .stat-card { flex-direction: column; }
+}

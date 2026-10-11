@@ -35,14 +35,22 @@ REPORT_COLUMNS: dict[str, str] = {
     "snr": "REAL",
     "status": "TEXT DEFAULT 'BARU'",
     "received_at": "REAL",
+    "delivery_key": "TEXT",
 }
 
 NODE_COLUMNS: dict[str, str] = {
     "last_seen": "REAL",
+    "last_new_report_at": "REAL",
     "last_rssi": "INTEGER",
     "last_snr": "REAL",
     "last_hop": "INTEGER",
     "last_pkt_id": "INTEGER",
+    "last_heartbeat_at": "REAL",
+    "last_gateway_contact_at": "REAL",
+    "heartbeat_uptime": "INTEGER",
+    "mesh_synced": "INTEGER",
+    "gateway_found": "INTEGER",
+    "pending_count": "INTEGER",
 }
 
 SERVICE_COLUMNS: dict[str, str] = {
@@ -113,7 +121,8 @@ def init_database(database_path: str | Path | None = None) -> list[str]:
                 rssi INTEGER,
                 snr REAL,
                 status TEXT DEFAULT 'BARU',
-                received_at REAL NOT NULL
+                received_at REAL NOT NULL,
+                delivery_key TEXT
             )
             """
         )
@@ -122,10 +131,17 @@ def init_database(database_path: str | Path | None = None) -> list[str]:
             CREATE TABLE IF NOT EXISTS node_status (
                 node_id INTEGER PRIMARY KEY,
                 last_seen REAL,
+                last_new_report_at REAL,
                 last_rssi INTEGER,
                 last_snr REAL,
                 last_hop INTEGER,
-                last_pkt_id INTEGER
+                last_pkt_id INTEGER,
+                last_heartbeat_at REAL,
+                last_gateway_contact_at REAL,
+                heartbeat_uptime INTEGER,
+                mesh_synced INTEGER,
+                gateway_found INTEGER,
+                pending_count INTEGER
             )
             """
         )
@@ -181,6 +197,10 @@ def init_database(database_path: str | Path | None = None) -> list[str]:
             "UPDATE reports SET received_at = CAST(strftime('%s', 'now') AS REAL) "
             "WHERE received_at IS NULL"
         )
+        conn.execute(
+            "UPDATE node_status SET last_new_report_at = last_seen "
+            "WHERE last_new_report_at IS NULL AND last_seen IS NOT NULL"
+        )
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_reports_received_at ON reports(received_at)"
@@ -192,6 +212,22 @@ def init_database(database_path: str | Path | None = None) -> list[str]:
             "ON reports(src_id, has_gps, received_at)"
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_sos ON reports(sos)")
+        duplicate_keys = conn.execute(
+            "SELECT 1 FROM reports WHERE delivery_key IS NOT NULL "
+            "GROUP BY delivery_key HAVING COUNT(*) > 1 LIMIT 1"
+        ).fetchone()
+        if duplicate_keys is None:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_delivery_key "
+                "ON reports(delivery_key) WHERE delivery_key IS NOT NULL"
+            )
+        else:
+            # Preserve every historical report. Runtime insertion uses an
+            # IMMEDIATE transaction + key lookup until an operator reviews the
+            # pre-existing conflict; startup must not delete data or crash.
+            note = "Pre-existing duplicate report delivery keys; unique index deferred"
+            LOGGER.critical(note)
+            migrations.append(note)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mobile_received ON mobile_events(received_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mobile_user_fix ON mobile_events(user_key,fix_timestamp)")
         conn.execute(
@@ -223,26 +259,22 @@ def insert_mobile_event(event: Mapping[str, Any], database_path: str | Path | No
                            "lat", "lon", "accuracy", "event_timestamp", "fix_timestamp", "source_node")
         if any(row[name] != event[name] for name in identity_fields):
             raise ValueError("request key conflicts with existing event")
-        conn.execute(
-            """
-            INSERT INTO node_status (
-                node_id, last_seen, last_rssi, last_snr, last_hop, last_pkt_id
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(node_id) DO UPDATE SET
-                last_seen = excluded.last_seen,
-                last_rssi = excluded.last_rssi,
-                last_snr = excluded.last_snr,
-                last_hop = excluded.last_hop
-            """,
-            (
-                event["source_node"],
-                event["received_at"],
-                event.get("rssi"),
-                event.get("snr"),
-                event.get("mesh_hops"),
-                0,
-            ),
-        )
+        if inserted:
+            conn.execute(
+                """
+                INSERT INTO node_status (
+                    node_id, last_seen, last_new_report_at, last_rssi, last_snr, last_hop, last_pkt_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(node_id) DO UPDATE SET
+                    last_seen = excluded.last_seen,
+                    last_new_report_at = excluded.last_new_report_at,
+                    last_rssi = excluded.last_rssi,
+                    last_snr = excluded.last_snr,
+                    last_hop = excluded.last_hop
+                """,
+                (event["source_node"], event["received_at"], event["received_at"],
+                 event.get("rssi"), event.get("snr"), event.get("mesh_hops"), 0),
+            )
         conn.commit()
         return int(row["id"]), inserted
 
@@ -260,8 +292,8 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
 
 def insert_report(
     report: Mapping[str, Any], database_path: str | Path | None = None
-) -> int:
-    """Insert one validated report and update that source node's activity atomically."""
+) -> tuple[int, bool]:
+    """Commit a report idempotently when delivery_key is present; return id and inserted."""
 
     fields = (
         "pkt_id",
@@ -280,41 +312,100 @@ def insert_report(
         "status",
         "received_at",
     )
+    delivery_key = report.get("delivery_key")
+    if delivery_key is not None:
+        if not isinstance(delivery_key, str) or len(delivery_key) != 32 or any(c not in "0123456789abcdef" for c in delivery_key):
+            raise ValueError("invalid report delivery_key")
+        fields += ("delivery_key",)
     values = [report.get(name) for name in fields]
-    values[13] = values[13] if values[13] in ALLOWED_STATUSES else "BARU"
+    status_index = fields.index("status")
+    values[status_index] = values[status_index] if values[status_index] in ALLOWED_STATUSES else "BARU"
 
     with connection(database_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if delivery_key:
+            existing = conn.execute(
+                "SELECT * FROM reports WHERE delivery_key=? ORDER BY id LIMIT 1",
+                (delivery_key,),
+            ).fetchone()
+            if existing is not None:
+                identity_fields = ("pkt_id", "src_id", "hop", "max_hop", "lat", "lon",
+                                   "has_gps", "kondisi", "jumlah", "sos", "pesan")
+                if any(existing[name] != report.get(name) for name in identity_fields):
+                    raise ValueError("delivery key conflicts with existing report")
+                conn.commit()
+                report_id = int(existing["id"])
+                LOGGER.info("Confirmed duplicate report database_id=%s source_node=%s delivery_key=%s",
+                            report_id, report["src_id"], delivery_key)
+                return report_id, False
         cursor = conn.execute(
-            f"INSERT INTO reports ({', '.join(fields)}) "
+            f"INSERT {'OR IGNORE ' if delivery_key else ''}INTO reports ({', '.join(fields)}) "
             f"VALUES ({', '.join('?' for _ in fields)})",
             values,
         )
+        inserted = cursor.rowcount == 1
+        if delivery_key:
+            row = conn.execute("SELECT * FROM reports WHERE delivery_key=?", (delivery_key,)).fetchone()
+            if row is None:
+                raise sqlite3.DatabaseError("report unavailable after insert")
+            identity_fields = ("pkt_id", "src_id", "hop", "max_hop", "lat", "lon",
+                               "has_gps", "kondisi", "jumlah", "sos", "pesan")
+            if any(row[name] != report.get(name) for name in identity_fields):
+                raise ValueError("delivery key conflicts with existing report")
+            report_id = int(row["id"])
+        else:
+            report_id = int(cursor.lastrowid)
+        if inserted:
+            conn.execute(
+                """
+                INSERT INTO node_status (
+                    node_id, last_seen, last_new_report_at, last_rssi, last_snr, last_hop, last_pkt_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(node_id) DO UPDATE SET
+                    last_seen = excluded.last_seen,
+                    last_new_report_at = excluded.last_new_report_at,
+                    last_rssi = excluded.last_rssi,
+                    last_snr = excluded.last_snr,
+                    last_hop = excluded.last_hop,
+                    last_pkt_id = excluded.last_pkt_id
+                """,
+                (report["src_id"], report["received_at"], report["received_at"],
+                 report["rssi"], report["snr"], report["hop"], report["pkt_id"]),
+            )
+        conn.commit()
+
+    LOGGER.info("%s report database_id=%s source_node=%s delivery_key=%s",
+                "Stored" if inserted else "Confirmed duplicate", report_id,
+                report["src_id"], delivery_key or "legacy-no-key")
+    return report_id, inserted
+
+
+def update_node_heartbeat(
+    heartbeat: Mapping[str, Any], database_path: str | Path | None = None
+) -> None:
+    """Update device liveness independently of new report activity."""
+    node_id = int(heartbeat["node_id"])
+    seen_at = float(heartbeat["received_at"])
+    with connection(database_path) as conn:
         conn.execute(
             """
             INSERT INTO node_status (
-                node_id, last_seen, last_rssi, last_snr, last_hop, last_pkt_id
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                node_id, last_heartbeat_at, last_gateway_contact_at, heartbeat_uptime,
+                mesh_synced, gateway_found, pending_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(node_id) DO UPDATE SET
-                last_seen = excluded.last_seen,
-                last_rssi = excluded.last_rssi,
-                last_snr = excluded.last_snr,
-                last_hop = excluded.last_hop,
-                last_pkt_id = excluded.last_pkt_id
+                last_heartbeat_at = excluded.last_heartbeat_at,
+                last_gateway_contact_at = excluded.last_gateway_contact_at,
+                heartbeat_uptime = excluded.heartbeat_uptime,
+                mesh_synced = excluded.mesh_synced,
+                gateway_found = excluded.gateway_found,
+                pending_count = excluded.pending_count
             """,
-            (
-                report["src_id"],
-                report["received_at"],
-                report["rssi"],
-                report["snr"],
-                report["hop"],
-                report["pkt_id"],
-            ),
+            (node_id, seen_at, seen_at, int(heartbeat["uptime_seconds"]),
+             int(bool(heartbeat["mesh_synced"])), int(bool(heartbeat["gateway_found"])),
+             int(heartbeat["pending_count"])),
         )
         conn.commit()
-        report_id = int(cursor.lastrowid)
-
-    LOGGER.info("Stored report database_id=%s source_node=%s", report_id, report["src_id"])
-    return report_id
 
 
 def query_reports(
@@ -381,12 +472,20 @@ def get_node_states(
     nodes: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
-        last_seen = item.get("last_seen")
+        last_seen = item.get("last_new_report_at") or item.get("last_seen")
         seconds_ago = max(0, int(current - float(last_seen))) if last_seen else None
         item["seconds_ago"] = seconds_ago
         item["recently_active"] = (
             seconds_ago is not None and seconds_ago < active_threshold_seconds
         )
+        heartbeat_at = item.get("last_heartbeat_at")
+        heartbeat_age = max(0, int(current - float(heartbeat_at))) if heartbeat_at else None
+        item["heartbeat_seconds_ago"] = heartbeat_age
+        item["device_status"] = (
+            "unknown" if heartbeat_age is None else
+            "online" if heartbeat_age < config.NODE_HEARTBEAT_STALE_SECONDS else "stale"
+        )
+        item["last_new_report_at"] = last_seen
         nodes.append(item)
     return nodes
 
@@ -414,7 +513,7 @@ def get_statistics(
         node_counts = conn.execute(
             """
             SELECT COUNT(*) AS known_nodes,
-                SUM(CASE WHEN last_seen >= ? THEN 1 ELSE 0 END) AS active_nodes
+                SUM(CASE WHEN last_new_report_at >= ? THEN 1 ELSE 0 END) AS active_nodes
             FROM node_status
             """,
             (cutoff,),
@@ -429,6 +528,10 @@ def get_statistics(
         "unhandled_reports": int(counts["unhandled_reports"] or 0),
         "recently_active_nodes": int(node_counts["active_nodes"] or 0),
         "known_nodes": int(node_counts["known_nodes"] or 0),
+        "online_nodes": sum(1 for node in get_node_states(
+            active_threshold_seconds=active_threshold_seconds,
+            database_path=database_path,
+        ) if node["device_status"] == "online"),
         "last_report": _row_to_dict(last),
     }
 

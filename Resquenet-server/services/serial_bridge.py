@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import queue
+import re
 import signal
 import threading
 import time
@@ -15,7 +16,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import config
-from services.mobile_wire import WireError, ack_serial_line, parse_ack, parse_mobile_serial
+from services.mobile_wire import (
+    WireError, ack_serial_line, parse_ack, parse_heartbeat_serial,
+    parse_legacy_serial, parse_mobile_serial,
+)
 
 try:  # Import errors are reported clearly when the independently run bridge starts.
     import serial
@@ -34,6 +38,7 @@ except ImportError:  # pragma: no cover - exercised only on an incomplete instal
 
 
 LOGGER = logging.getLogger(__name__)
+ANSI_COLOR = re.compile(r"\x1b\[[0-9;]*m")
 
 FIRMWARE_INFO_PREFIXES = (
     "OLED terdeteksi",
@@ -145,6 +150,11 @@ def normalize_report(
     if timestamp <= 0:
         raise ReportValidationError("received_at must be greater than zero")
     report["received_at"] = timestamp
+    delivery_key = values.get("delivery_key")
+    if delivery_key is not None:
+        if not isinstance(delivery_key, str) or len(delivery_key) != 32 or any(c not in "0123456789abcdef" for c in delivery_key):
+            raise ReportValidationError("delivery_key must be 32 lowercase hex characters")
+        report["delivery_key"] = delivery_key
     return report
 
 
@@ -177,13 +187,20 @@ def classify_serial_line(
 ) -> tuple[str, dict[str, Any] | str | None]:
     """Classify Gateway output as empty, ready, firmware log, report, or invalid."""
 
-    cleaned = line.strip("\r\n ")
+    # LoRaMesher writes ANSI-coloured diagnostics to the same USB serial port
+    # as report envelopes. Strip only colour codes before classifying a line.
+    cleaned = ANSI_COLOR.sub("", line).strip("\r\n ")
     if not cleaned:
         return "empty", None
     if cleaned == "GATEWAY_READY":
         return "ready", cleaned
     if cleaned.startswith("[DROP]"):
         return "drop", cleaned
+    if cleaned.startswith("RNL1,"):
+        try:
+            return "report", parse_legacy_serial(cleaned, received_at=received_at)
+        except WireError as exc:
+            return "invalid", str(exc)
     if cleaned.startswith(FIRMWARE_INFO_PREFIXES):
         return "firmware", cleaned
     if cleaned.startswith("["):
@@ -191,6 +208,11 @@ def classify_serial_line(
     if cleaned.startswith("RNM1,"):
         try:
             return "mobile", parse_mobile_serial(cleaned, received_at=received_at)
+        except WireError as exc:
+            return "invalid", str(exc)
+    if cleaned.startswith("RNH1,"):
+        try:
+            return "heartbeat", parse_heartbeat_serial(cleaned, received_at=received_at)
         except WireError as exc:
             return "invalid", str(exc)
     try:
@@ -235,7 +257,10 @@ class SerialBridge:
         self.serial_connected = False
         self.last_packet_at: float | None = None
         self._last_status: dict[str, Any] | None = None
+        self._last_status_refresh = 0.0
         self._ack_queue: queue.Queue[str] = queue.Queue(maxsize=64)
+        self._ack_lock = threading.Lock()
+        self._ack_keys: set[str] = set()
         self.mqtt_client = _make_mqtt_client("rescuenet-serial-bridge")
         self.mqtt_client.on_connect = self._on_mqtt_connect
         self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
@@ -248,7 +273,9 @@ class SerialBridge:
         code = int(getattr(reason_code, "value", reason_code))
         if code == 0:
             LOGGER.info("MQTT connected at %s:%s", config.MQTT_HOST, config.MQTT_PORT)
-            client.subscribe(config.MQTT_MOBILE_ACK_TOPIC, qos=1)
+            client.subscribe(
+                [(config.MQTT_MOBILE_ACK_TOPIC, 1), (config.MQTT_REPORT_ACK_TOPIC, 1)]
+            )
             if self._last_status:
                 self._publish_json(
                     config.MQTT_GATEWAY_STATUS_TOPIC, self._last_status, retain=True
@@ -257,13 +284,17 @@ class SerialBridge:
             LOGGER.error("MQTT connection rejected: %s", reason_code)
 
     def _on_mqtt_message(self, _client, _userdata, message) -> None:
-        if message.topic != config.MQTT_MOBILE_ACK_TOPIC:
+        if message.topic not in (config.MQTT_MOBILE_ACK_TOPIC, config.MQTT_REPORT_ACK_TOPIC):
             return
         try:
             key = parse_ack(json.loads(message.payload.decode("utf-8")))
-            self._ack_queue.put_nowait(key)
+            with self._ack_lock:
+                if key in self._ack_keys:
+                    return
+                self._ack_queue.put_nowait(key)
+                self._ack_keys.add(key)
         except (ValueError, UnicodeDecodeError, TypeError, queue.Full) as exc:
-            LOGGER.warning("Invalid/full mobile ACK queue: %s", exc)
+            LOGGER.warning("Invalid/full STORED ACK queue: %s", exc)
 
     @staticmethod
     def _on_mqtt_disconnect(
@@ -331,9 +362,6 @@ class SerialBridge:
             return
         if kind == "firmware":
             LOGGER.info("Gateway firmware: %s", payload)
-            if not self.gateway_ready:
-                self.gateway_ready = True
-                self.publish_gateway_status()
             return
         if kind == "invalid":
             LOGGER.warning("Malformed serial line skipped: %s", payload)
@@ -342,23 +370,39 @@ class SerialBridge:
         if kind == "mobile":
             assert isinstance(payload, dict)
             self.gateway_ready = True
-            self._publish_json(config.MQTT_MOBILE_EVENT_TOPIC, payload)
+            published = self._publish_json(config.MQTT_MOBILE_EVENT_TOPIC, payload)
             self.last_packet_at = float(payload["received_at"])
-            LOGGER.info("Mobile event request=%s type=%s", payload["request_key"], payload["event_type"])
+            if published is None or published.rc != mqtt.MQTT_ERR_SUCCESS:
+                LOGGER.error("Mobile event request=%s type=%s read from Gateway serial but MQTT publish failed",
+                             payload["request_key"], payload["event_type"])
+            else:
+                LOGGER.info("Mobile event request=%s type=%s stage=gateway_serial_ingress mqtt_qos=1 queued=true",
+                            payload["request_key"], payload["event_type"])
             self.publish_gateway_status()
+            return
+
+        if kind == "heartbeat":
+            assert isinstance(payload, dict)
+            published = self._publish_json(config.MQTT_NODE_HEARTBEAT_TOPIC, payload)
+            if published is None or published.rc != mqtt.MQTT_ERR_SUCCESS:
+                LOGGER.error("Heartbeat from node=%s read from serial but MQTT publish failed", payload["node_id"])
+            else:
+                LOGGER.info("Heartbeat received node=%s synced=%s gateway_found=%s pending=%s",
+                            payload["node_id"], payload["mesh_synced"],
+                            payload["gateway_found"], payload["pending_count"])
             return
 
         report = payload
         assert isinstance(report, dict)
         self.gateway_ready = True
-        self._publish_json(config.MQTT_REPORT_TOPIC, report)
+        published = self._publish_json(config.MQTT_REPORT_TOPIC, report)
         self.last_packet_at = float(report["received_at"])
-        LOGGER.info(
-            "Report received packet_id=%s source_node=%s hop=%s",
-            report["pkt_id"],
-            report["src_id"],
-            report["hop"],
-        )
+        if published is None or published.rc != mqtt.MQTT_ERR_SUCCESS:
+            LOGGER.error("Report packet_id=%s source_node=%s was read from serial but MQTT publish failed",
+                         report["pkt_id"], report["src_id"])
+        else:
+            LOGGER.info("Report forwarded to MQTT key=%s packet_id=%s source_node=%s hop=%s",
+                        report.get("delivery_key"), report["pkt_id"], report["src_id"], report["hop"])
         self.publish_gateway_status()
 
     def run(self) -> None:
@@ -388,12 +432,32 @@ class SerialBridge:
                         while not self.stop_event.is_set():
                             while not self._ack_queue.empty():
                                 key = self._ack_queue.get_nowait()
-                                device.write(ack_serial_line(key))
-                                device.flush()
-                                LOGGER.info("STORED ACK sent to Gateway request=%s", key)
+                                try:
+                                    frame = ack_serial_line(key)
+                                    written = device.write(frame)
+                                    if written != len(frame):
+                                        raise OSError(f"short serial write {written}/{len(frame)}")
+                                    device.flush()
+                                except Exception:
+                                    # Do not silently discard the ACK. A later
+                                    # reconnect/loop can retry; the key is idempotent.
+                                    try:
+                                        self._ack_queue.put_nowait(key)
+                                    except queue.Full:
+                                        LOGGER.critical("STORED ACK retry queue full after serial write failure key=%s", key)
+                                    raise
+                                with self._ack_lock:
+                                    self._ack_keys.discard(key)
+                                LOGGER.info("STORED ACK written to Gateway serial key=%s", key)
                             raw = device.readline()
                             if raw:
                                 self.handle_line(raw.decode("utf-8", errors="replace"))
+                            # Retained status has a freshness contract in the API;
+                            # refresh it periodically even when no reports arrive.
+                            now = time.monotonic()
+                            if now - self._last_status_refresh >= 5:
+                                self.publish_gateway_status()
+                                self._last_status_refresh = now
                 except (SerialException, OSError) as exc:
                     LOGGER.warning("Gateway serial disconnected (%s): %s", port, exc)
                 except Exception:

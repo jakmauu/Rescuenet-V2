@@ -50,6 +50,22 @@ def test_gateway_ready_is_not_a_report():
     assert payload == "GATEWAY_READY"
 
 
+def test_rnh1_heartbeat_is_typed_and_not_a_report():
+    kind, heartbeat = classify_serial_line("\x1b[32mRNH1,2,9068,1,123,3,4\x1b[0m\r\n", received_at=1234.5)
+    assert kind == "heartbeat"
+    assert heartbeat == {
+        "node_id": 2, "mesh_source": 9068, "mesh_hops": 1,
+        "uptime_seconds": 123, "mesh_synced": True, "gateway_found": True,
+        "pending_count": 4, "received_at": 1234.5,
+    }
+
+
+@pytest.mark.parametrize("line", ["RNH1,0,9068,1,123,3,4", "RNH1,2,0,1,123,3,4", "RNH1,2,9068,1,0,3,4", "RNH1,2,9068,1,123,4,4"])
+def test_invalid_heartbeat_envelope_is_rejected(line):
+    kind, _payload = classify_serial_line(line)
+    assert kind == "invalid"
+
+
 def test_drop_log_is_not_a_report():
     kind, _payload = classify_serial_line("[DROP] Format paket tidak valid.")
     assert kind == "drop"
@@ -58,6 +74,27 @@ def test_drop_log_is_not_a_report():
 def test_firmware_information_is_not_a_report():
     kind, _payload = classify_serial_line("OLED terdeteksi.")
     assert kind == "firmware"
+
+
+def test_coloured_loramesher_log_is_not_a_malformed_report():
+    kind, payload = classify_serial_line(
+        "\x1b[36m[DEBUG] [0x2510] Already Sleeping\x1b[0m\r\n"
+    )
+    assert kind == "firmware"
+    assert payload == "[DEBUG] [0x2510] Already Sleeping"
+
+
+def test_mesh_failure_log_is_not_gateway_ready():
+    # Only the explicit GATEWAY_READY token (or actual forwarded data) can mark
+    # the mesh firmware ready; a PMU/start error is diagnostic only.
+    from services.serial_bridge import SerialBridge
+
+    bridge = SerialBridge(serial_port="COM-test")
+    bridge.publish_gateway_status = lambda: None
+    bridge.handle_line("[MESH] PMU failure")
+    assert bridge.gateway_ready is False
+    bridge.handle_line("GATEWAY_READY")
+    assert bridge.gateway_ready is True
 
 
 def test_unknown_line_is_invalid_without_raising():

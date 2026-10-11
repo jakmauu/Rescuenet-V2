@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d2038">
+  <title>RescueNet Command Center</title>
+  <link rel="icon" href="{{ url_for('static', filename='img/branding/rescuenet-logo.png') }}" type="image/png">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet-1.9.4/leaflet.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=dashboard-20261011">
+  {% for file in ['tokens.css', 'components.css', 'layout.css', 'pages/dashboard.css', 'pages/reports.css', 'pages/map.css', 'pages/mesh_nodes.css'] %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ file) }}?v={{ 'mesh-animation-20261011-1' if file == 'pages/mesh_nodes.css' else 'dashboard-20261011' }}">
+  {% endfor %}
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  {% include 'components/icons.html' %}
+  <div class="app-shell">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    {% include 'components/sidebar.html' %}
+    <main class="main" id="main-content">
+      {% include 'components/topbar.html' %}
+      <div class="content">
+        <p class="refresh-warning" id="refresh-warning" role="status" hidden></p>
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+  {% include 'components/report_modal.html' %}
+  <script>window.RESCUENET_MAP_CONFIG = {{ map_config | tojson }};</script>
+  <script src="{{ url_for('static', filename='vendor/leaflet-1.9.4/leaflet.js') }}" defer></script>
+  {% for file in ['ui.js', 'pages/dashboard.js', 'pages/reports.js', 'pages/mesh_nodes.js', 'pages/map.js', 'pages/system_status.js', 'app.js'] %}
+  <script src="{{ url_for('static', filename='js/' ~ file) }}?v={{ 'mesh-animation-20261011-1' if file == 'pages/mesh_nodes.js' else 'dashboard-20261011' }}" defer></script>
+  {% endfor %}
+</body>
+</html>

@@ -57,7 +57,11 @@ def test_root_and_local_static_assets_load(client):
     root = client.get("/")
     assert root.status_code == 200
     assert b"RescueNet Command Center" in root.data
-    assert b"leaflet@1.9.4" in root.data
+    assert b"/static/vendor/leaflet-1.9.4/leaflet.js" in root.data
+    assert b"/static/vendor/leaflet-1.9.4/leaflet.css" in root.data
+    assert b"https://unpkg.com" not in root.data
+    assert client.get("/static/vendor/leaflet-1.9.4/leaflet.js").status_code == 200
+    assert client.get("/static/img/branding/rescuenet-logo.png").status_code == 200
     assert b"Live Rescue Map" in root.data
     assert b'id="dashboard-mobile-sos"' in root.data
     assert b'id="reports-mobile-sos"' in root.data
@@ -71,6 +75,39 @@ def test_root_and_local_static_assets_load(client):
     assert b"SOS PWA baru tersimpan di server" in dashboard_js.data
     reports_view = root.data.split(b'id="view-reports"', 1)[1].split(b'id="view-map"', 1)[0]
     assert reports_view.index(b'id="reports-mobile-sos"') < reports_view.index(b'id="reports-table"')
+
+
+def test_modular_dashboard_assets_and_dom_contract(client):
+    from html.parser import HTMLParser
+    from pathlib import Path
+    import re
+
+    class Elements(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.ids = []
+            self.assets = []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if "id" in attrs:
+                self.ids.append(attrs["id"])
+            for key in ("src", "href"):
+                value = attrs.get(key, "")
+                if value.startswith("/static/"):
+                    self.assets.append(value)
+
+    parsed = Elements()
+    parsed.feed(client.get("/").get_data(as_text=True))
+    assert len(parsed.ids) == len(set(parsed.ids)), "Duplicate DOM IDs"
+    for asset in parsed.assets:
+        assert client.get(asset).status_code == 200, asset
+    script_dir = Path(__file__).resolve().parents[1] / "static" / "js"
+    # The modal creates these two controls only after report details arrive.
+    runtime_ids = {"modal-status", "save-status"}
+    for script in [script_dir / "app.js", *sorted((script_dir / "pages").glob("*.js"))]:
+        required = set(re.findall(r'byId\("([a-z0-9-]+)"\)', script.read_text(encoding="utf-8")))
+        assert required <= set(parsed.ids) | runtime_ids, (script.name, required - set(parsed.ids) - runtime_ids)
 
 
 def test_mobile_sos_is_immediately_available_to_dashboard_api_without_cache(client, app):

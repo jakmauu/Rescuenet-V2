@@ -24,6 +24,12 @@ struct Legacy {
   char message[71]{};
 };
 struct Ack { uint8_t key[16]{}; uint8_t status = 0; };
+struct Heartbeat {
+  uint8_t node = 0;
+  bool meshSynced = false, gatewayFound = false;
+  uint32_t uptimeSeconds = 0;
+  uint16_t pendingCount = 0;
+};
 inline uint16_t crc16(const uint8_t *data, size_t n) {
   uint16_t c = 0xffff;
   for (size_t i = 0; i < n; ++i) {
@@ -120,6 +126,21 @@ inline size_t encodeAck(const Ack &ack, uint8_t out[MAX_PACKET]) {
 inline bool decodeAck(const uint8_t *p, size_t n, Ack &ack) {
   if (n != 23 || memcmp(p, "RNA1", 4) || p[4] != 1 || !validCrc(p, n)) return false;
   ack.status = 1; memcpy(ack.key, p + 5, 16); return true;
+}
+// Additive, low-priority liveness frame. Existing RNL1/RNM1/RNA1 bytes remain unchanged.
+inline size_t encodeHeartbeat(const Heartbeat &heartbeat, uint8_t out[MAX_PACKET]) {
+  if (heartbeat.node < 1 || heartbeat.node > 15 || !heartbeat.uptimeSeconds) return 0;
+  memcpy(out, "RNH1", 4); out[4] = 1; out[5] = heartbeat.node;
+  out[6] = uint8_t((heartbeat.meshSynced ? 1 : 0) | (heartbeat.gatewayFound ? 2 : 0));
+  u32(out + 7, heartbeat.uptimeSeconds); u16(out + 11, heartbeat.pendingCount);
+  u16(out + 13, crc16(out, 13)); return 15;
+}
+inline bool decodeHeartbeat(const uint8_t *p, size_t n, Heartbeat &heartbeat) {
+  if (n != 15 || memcmp(p, "RNH1", 4) || p[4] != 1 || p[5] < 1 || p[5] > 15 ||
+      (p[6] & ~3) || !r32(p + 7) || !validCrc(p, n)) return false;
+  heartbeat = Heartbeat{}; heartbeat.node = p[5]; heartbeat.meshSynced = p[6] & 1;
+  heartbeat.gatewayFound = p[6] & 2; heartbeat.uptimeSeconds = r32(p + 7);
+  heartbeat.pendingCount = r16(p + 11); return true;
 }
 static_assert(52 + MAX_NAME <= MAX_PACKET, "mobile frame exceeds LoRaMesher application limit");
 static_assert(21 + 10 + 69 <= MAX_PACKET, "legacy frame exceeds LoRaMesher application limit");

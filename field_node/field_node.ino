@@ -56,7 +56,7 @@
 
 #define XPOWERS_CHIP_AXP2101
 
-#define NODE_ID        2
+#define NODE_ID        1
 #define GATEWAY_ID     0
 #define MAX_HOP        5
 
@@ -624,6 +624,7 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
 <meta
 name="viewport"
 content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1a1a2e">
 
 <title>
 RescueNet - Bantuan Darurat
@@ -756,11 +757,12 @@ button
 
 <p class="info">
 
-Jaringan darurat offline.
+Wi-Fi RescueNet adalah jaringan lokal tanpa internet. Jika iPhone bertanya,
+pilih <strong>"Tetap Terhubung"</strong> atau <strong>"Tanpa Internet"</strong>.
+Setelah tersambung, tutup halaman login Wi-Fi ini lalu buka aplikasi RescueNet
+dari Home Screen. API aplikasi menggunakan HTTPS; portal ini tetap HTTP.
 
-Tidak membutuhkan internet atau pulsa.
-
-Isi form untuk mengirim laporan ke posko SAR.
+Isi form ini hanya jika Anda ingin mengirim laporan langsung dari portal.
 
 </p>
 
@@ -909,6 +911,7 @@ type="submit">
 
 void handleRoot()
 {
+    server.sendHeader("Cache-Control", "no-store");
     server.send_P(
         200,
         "text/html",
@@ -1650,7 +1653,7 @@ void initOLED()
 // INIT WIFI
 // ================================================================
 
-void initWiFi()
+bool initWiFi()
 {
 
     String ssid =
@@ -1664,7 +1667,7 @@ void initWiFi()
 
 
     // Konfigurasi IP dilakukan sebelum AP aktif
-    WiFi.softAPConfig(
+    const bool configOK = WiFi.softAPConfig(
         apIP,
         apIP,
         IPAddress(
@@ -1672,8 +1675,16 @@ void initWiFi()
             255,
             255,
             0
-        )
+        ),
+        IPAddress(192, 168, 4, 2), // DHCP lease range begins after the AP address.
+        apIP                         // Offer the local wildcard DNS server to AP clients.
     );
+
+    if (!configOK)
+    {
+        Serial.println("[WIFI] Gagal mengatur IP AP; captive portal dan API tidak dimulai.");
+        return false;
+    }
 
 
     // Open WiFi:
@@ -1691,7 +1702,7 @@ void initWiFi()
             "[WIFI] Gagal membuat Access Point."
         );
 
-        return;
+        return false;
     }
 
 
@@ -1712,11 +1723,14 @@ void initWiFi()
 
 
     // Semua DNS diarahkan ke captive portal
-    dnsServer.start(
+    const bool dnsOK = dnsServer.start(
         DNS_PORT,
         "*",
         apIP
     );
+
+    Serial.printf("[WIFI] AP address=%s gateway=%s dhcp_start=192.168.4.2 dns=%s captive_dns=%s\n",
+        WiFi.softAPIP().toString().c_str(), apIP.toString().c_str(), apIP.toString().c_str(), dnsOK ? "ready" : "failed");
 
 
     server.on(
@@ -1724,6 +1738,17 @@ void initWiFi()
         HTTP_GET,
         handleRoot
     );
+
+    // iOS/Android/Windows HTTP connectivity probes must receive the captive
+    // portal, not a fake "internet available" success response. HTTPS probes
+    // are deliberately not intercepted because the AP certificate is local.
+    server.on("/hotspot-detect.html", HTTP_GET, handleRoot);
+    server.on("/library/test/success.html", HTTP_GET, handleRoot);
+    server.on("/generate_204", HTTP_GET, handleRoot);
+    server.on("/gen_204", HTTP_GET, handleRoot);
+    server.on("/connecttest.txt", HTTP_GET, handleRoot);
+    server.on("/ncsi.txt", HTTP_GET, handleRoot);
+    server.on("/success.txt", HTTP_GET, handleRoot);
 
 
     server.on(
@@ -1751,6 +1776,7 @@ void initWiFi()
     Serial.println(
         "[WEB] Captive Portal aktif."
     );
+    return true;
 }
 
 
@@ -2052,9 +2078,11 @@ void setup()
 
     // Wi-Fi entropy is active before allocating a mobile boot session.
     // Mobile queue is restored before HTTP requests can be served in loop().
-    initWiFi();
+    const bool apReady = initWiFi();
     mobileApi.begin(pmuOK && PMU.isEnableALDO2());
     meshTransport.begin(pmuOK && PMU.isEnableALDO2());
+    if (apReady) mobileApi.beginHttps();
+    else Serial.println("[HTTPS] tidak dimulai karena AP lokal gagal disiapkan.");
 
 
     String ssid =

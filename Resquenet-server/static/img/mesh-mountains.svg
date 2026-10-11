@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMax slice">
+  <defs>
+    <linearGradient id="far" x2="0" y2="1">
+      <stop stop-color="#9dc9ef" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#d5e9f9" stop-opacity=".15"/>
+    </linearGradient>
+    <linearGradient id="near" x2="0" y2="1">
+      <stop stop-color="#82b1d6" stop-opacity=".23"/>
+      <stop offset="1" stop-color="#a9cce7" stop-opacity=".35"/>
+    </linearGradient>
+    <symbol id="pine" viewBox="0 0 24 50">
+      <path d="M12 0 3 17H8L0 31H6L0 43H10V50H14V43H24L18 31H24L16 17H21Z"/>
+    </symbol>
+  </defs>
+  <path fill="url(#far)" d="M0 124 40 112 74 135 110 117 149 143 202 162 244 151 284 181 330 168 390 196 435 181 486 203 535 183 586 196 627 171 684 154 718 132 751 151 789 116 821 129 855 88 883 101 924 71 959 85 1000 49V500H0Z"/>
+  <path fill="#a6cbe9" opacity=".18" d="M0 243 38 221 77 249 115 230 157 263 205 239 257 278 301 249 338 272 382 246 425 281 474 258 518 293 568 275 613 307 653 264 699 278 743 243 787 268 834 232 875 249 921 213 957 235 1000 194V500H0Z"/>
+  <path fill="url(#near)" d="M0 381 42 357 87 385 122 343 164 369 204 350 251 396 293 374 340 416 383 398 421 429 466 393 509 415 551 384 597 408 644 363 689 391 730 347 776 369 825 322 869 348 914 304 956 331 1000 288V500H0Z"/>
+  <g fill="#7fa9c7" opacity=".18">
+    <use href="#pine" x="0" y="360" width="25" height="66"/><use href="#pine" x="23" y="381" width="20" height="54"/>
+    <use href="#pine" x="58" y="391" width="25" height="70"/><use href="#pine" x="86" y="410" width="19" height="53"/>
+    <use href="#pine" x="136" y="399" width="24" height="67"/><use href="#pine" x="178" y="428" width="22" height="57"/>
+    <use href="#pine" x="257" y="439" width="21" height="58"/><use href="#pine" x="302" y="424" width="25" height="75"/>
+    <use href="#pine" x="367" y="444" width="22" height="57"/><use href="#pine" x="589" y="438" width="24" height="65"/>
+    <use href="#pine" x="653" y="423" width="27" height="78"/><use href="#pine" x="706" y="396" width="26" height="74"/>
+    <use href="#pine" x="751" y="417" width="21" height="62"/><use href="#pine" x="812" y="383" width="28" height="82"/>
+    <use href="#pine" x="862" y="399" width="22" height="69"/><use href="#pine" x="913" y="371" width="29" height="86"/>
+    <use href="#pine" x="960" y="351" width="26" height="79"/><use href="#pine" x="982" y="369" width="24" height="76"/>
+  </g>
+</svg>

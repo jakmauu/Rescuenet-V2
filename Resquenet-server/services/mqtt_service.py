@@ -102,7 +102,7 @@ class MQTTService:
             return
         client.subscribe(
             [(config.MQTT_REPORT_TOPIC, 1), (config.MQTT_GATEWAY_STATUS_TOPIC, 1),
-             (config.MQTT_MOBILE_EVENT_TOPIC, 1)]
+             (config.MQTT_MOBILE_EVENT_TOPIC, 1), (config.MQTT_NODE_HEARTBEAT_TOPIC, 1)]
         )
         database.set_service_state(
             "mqtt",
@@ -146,8 +146,38 @@ class MQTTService:
             self._handle_gateway_status(payload)
         elif message.topic == config.MQTT_MOBILE_EVENT_TOPIC:
             self._handle_mobile_event(payload)
+        elif message.topic == config.MQTT_NODE_HEARTBEAT_TOPIC:
+            self._handle_node_heartbeat(payload)
+
+    def _handle_node_heartbeat(self, payload: dict[str, Any]) -> None:
+        try:
+            node_id = payload.get("node_id")
+            uptime = payload.get("uptime_seconds")
+            pending = payload.get("pending_count")
+            synced = payload.get("mesh_synced")
+            gateway_found = payload.get("gateway_found")
+            received_at = _safe_timestamp(payload.get("received_at")) or time.time()
+            if (isinstance(node_id, bool) or not isinstance(node_id, int) or not 1 <= node_id <= 15
+                    or isinstance(uptime, bool) or not isinstance(uptime, int) or uptime <= 0
+                    or isinstance(pending, bool) or not isinstance(pending, int) or not 0 <= pending <= 65535
+                    or not isinstance(synced, bool) or not isinstance(gateway_found, bool)):
+                raise ValueError("invalid heartbeat fields")
+            heartbeat = {
+                "node_id": node_id, "uptime_seconds": uptime,
+                "pending_count": pending, "mesh_synced": synced,
+                "gateway_found": gateway_found, "received_at": received_at,
+            }
+            database.update_node_heartbeat(heartbeat, database_path=self.database_path)
+            LOGGER.info("Node heartbeat stored node=%s uptime=%s synced=%s gateway_found=%s pending=%s",
+                        node_id, uptime, synced, gateway_found, pending)
+        except (TypeError, ValueError, KeyError, OverflowError):
+            LOGGER.warning("Invalid node heartbeat skipped")
+        except Exception:
+            LOGGER.exception("Database failure while storing node heartbeat")
 
     def _handle_mobile_event(self, payload: dict[str, Any]) -> None:
+        started = time.perf_counter()
+        key = "unknown"
         try:
             key = parse_ack({"request_key": payload.get("request_key"), "status": "STORED"})
             if payload.get("event_type") not in ("SOS", "LOCATION"):
@@ -158,7 +188,10 @@ class MQTTService:
             result = self.client.publish(config.MQTT_MOBILE_ACK_TOPIC, ack, qos=1, retain=False)
             if result.rc != mqtt.MQTT_ERR_SUCCESS:
                 LOGGER.warning("STORED ACK publish failed for request=%s rc=%s", key, result.rc)
-            LOGGER.info("Mobile %s id=%s request=%s", "inserted" if inserted else "duplicate", row_id, key)
+            LOGGER.info("Mobile %s id=%s request=%s stage=database_committed elapsed_ms=%.1f ack_queued=%s",
+                        "inserted" if inserted else "duplicate", row_id, key,
+                        (time.perf_counter() - started) * 1000,
+                        result.rc == mqtt.MQTT_ERR_SUCCESS)
         except (WireError, ValueError, TypeError, KeyError, OverflowError) as exc:
             LOGGER.warning("Invalid mobile event skipped: %s", exc)
         except Exception:
@@ -167,7 +200,15 @@ class MQTTService:
     def _handle_report(self, payload: dict[str, Any]) -> None:
         try:
             report = normalize_report(payload)
-            database.insert_report(report, database_path=self.database_path)
+            report_id, inserted = database.insert_report(report, database_path=self.database_path)
+            key = report.get("delivery_key")
+            if key:
+                ack = json.dumps({"request_key": key, "status": "STORED"}, separators=(",", ":"))
+                result = self.client.publish(config.MQTT_REPORT_ACK_TOPIC, ack, qos=1, retain=False)
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    LOGGER.warning("Report STORED ACK publish failed key=%s rc=%s", key, result.rc)
+                else:
+                    LOGGER.info("Report %s id=%s key=%s; STORED ACK published", "inserted" if inserted else "duplicate", report_id, key)
         except (ReportValidationError, KeyError, TypeError, ValueError) as exc:
             LOGGER.warning("Invalid MQTT report skipped: %s", exc)
         except Exception:

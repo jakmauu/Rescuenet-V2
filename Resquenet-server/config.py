@@ -53,14 +53,20 @@ MQTT_REPORT_TOPIC = "rescuenet/reports"
 MQTT_GATEWAY_STATUS_TOPIC = "rescuenet/status/gateway"
 MQTT_MOBILE_EVENT_TOPIC = "rescuenet/mobile/events"
 MQTT_MOBILE_ACK_TOPIC = "rescuenet/mobile/ack"
+MQTT_REPORT_ACK_TOPIC = "rescuenet/reports/ack"
+MQTT_NODE_HEARTBEAT_TOPIC = "rescuenet/nodes/heartbeat"
 
 # An empty value enables stable-path discovery in services.serial_bridge.
 SERIAL_PORT = os.getenv("RESCUENET_SERIAL_PORT") or None
 SERIAL_BAUD = _env_int("RESCUENET_SERIAL_BAUD", 115200)
 SERIAL_RECONNECT_SECONDS = _env_float("RESCUENET_SERIAL_RECONNECT_SECONDS", 5.0)
+GATEWAY_STATUS_STALE_SECONDS = _env_int("RESCUENET_GATEWAY_STATUS_STALE_SECONDS", 20)
 
 NODE_ACTIVE_THRESHOLD_SECONDS = _env_int(
     "RESCUENET_NODE_ACTIVE_THRESHOLD_SECONDS", 300
+)
+NODE_HEARTBEAT_STALE_SECONDS = _env_int(
+    "RESCUENET_NODE_HEARTBEAT_STALE_SECONDS", 150
 )
 
 # The browser loads Leaflet and map tiles over the Raspberry Pi's internet
