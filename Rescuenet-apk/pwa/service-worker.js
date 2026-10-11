@@ -1,6 +1,10 @@
-const CACHE_NAME = 'rescuenet-pwa-v9';
+const CACHE_NAME = 'rescuenet-pwa-v10';
 const APP_SHELL = [
-  './', './index.html', './styles.css', './app.mjs', './core.mjs', './location-scheduler.mjs',
+  './', './index.html', './styles.css', './styles/app.css', './styles/tokens.css', './styles/base.css', './styles/components.css',
+  './styles/pages/onboarding.css', './styles/pages/home.css', './styles/pages/map.css', './styles/pages/status.css', './styles/pages/profile.css',
+  './app.mjs', './core.mjs', './location-scheduler.mjs',
+  './components/status-badge.mjs', './components/app-header.mjs', './components/bottom-nav.mjs', './components/toast.mjs', './components/connection-card.mjs',
+  './pages/onboarding.mjs', './pages/home.mjs', './pages/map.mjs', './pages/status.mjs', './pages/profile.mjs',
   './manifest.webmanifest', './icon.svg', './assets/rescuenet-logo.png',
 ];
 

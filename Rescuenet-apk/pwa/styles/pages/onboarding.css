@@ -1,0 +1,14 @@
+.onboarding-screen { min-height: calc(100dvh - 100px); padding-top: 24px; }
+.onboarding-mark { display: grid; width: 84px; height: 84px; place-items: center; margin: 10px auto 22px; border-radius: 28px; background: linear-gradient(145deg, #dceeff, white); box-shadow: 0 14px 28px rgb(25 105 200 / 12%); }
+.onboarding-mark img { width: 68px; height: 68px; object-fit: contain; }
+.onboarding-screen > .eyebrow, .onboarding-screen > h1, .onboarding-screen > .lead { text-align: center; }
+.onboarding-screen > .lead { max-width: 390px; margin: 0 auto; }
+.onboarding-form, .guide-card { margin-top: 22px; }
+.onboarding-form label:not(.consent-row), .identity-editor label, .network-card label, .settings-card > label:not(.consent-row) { display: block; margin: 14px 0 6px; color: #52647c; font-size: 13px; font-weight: 700; }
+.onboarding-form input:not([type=checkbox]), .onboarding-form select, .identity-editor input, .identity-editor select, .network-card input, .settings-card select { width: 100%; min-height: 48px; padding: 0 13px; border: 1px solid #cad9eb; border-radius: 13px; outline-color: var(--blue); background: white; color: var(--navy); }
+.onboarding-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.onboarding-actions .button { flex: 1; }
+.guide-card > strong { display: block; color: var(--navy); font-size: 17px; }
+.guide-card p, .guide-card li { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.guide-card ol, .network-card ol { padding-left: 20px; }
+.guide-card li + li, .network-card li + li { margin-top: 7px; }

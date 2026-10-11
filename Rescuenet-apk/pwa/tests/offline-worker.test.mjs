@@ -44,7 +44,7 @@ test('service worker menyimpan app shell di path GitHub Pages dan membuka berand
   let install;
   listeners.get('install')({ waitUntil(promise) { install = promise; } });
   await install;
-  for (const path of ['index.html', 'app.mjs', 'core.mjs', 'location-scheduler.mjs', 'styles.css', 'manifest.webmanifest', 'assets/rescuenet-logo.png']) {
+  for (const path of ['index.html', 'app.mjs', 'core.mjs', 'location-scheduler.mjs', 'styles.css', 'styles/app.css', 'styles/pages/home.css', 'components/app-header.mjs', 'components/toast.mjs', 'pages/status.mjs', 'manifest.webmanifest', 'assets/rescuenet-logo.png']) {
     assert.ok(entries.has(`${appRoot}${path}`), `missing offline shell asset ${path}`);
   }
 

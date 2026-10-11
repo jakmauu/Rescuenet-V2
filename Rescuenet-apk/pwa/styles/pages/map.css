@@ -1,0 +1,10 @@
+.map-card { display: grid; gap: 16px; }
+.map-placeholder { display: grid; min-height: 300px; place-content: center; justify-items: center; gap: 13px; overflow: hidden; border: 1px solid #e3edfa; border-radius: 21px; background: radial-gradient(circle at 50% 42%, #fff 0 6%, #dfeeff 6.2% 19%, #eaf4ff 19.2% 30%, #f4f8fd 30.2%); padding: 23px; text-align: center; color: #526b8e; }
+.map-placeholder strong { max-width: 100%; color: var(--navy); font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.map-placeholder span:last-child { max-width: 260px; font-size: 13px; line-height: 1.45; }
+.map-pin { display: grid; width: 56px; height: 56px; place-items: center; border: 5px solid white; border-radius: 50% 50% 50% 8px; color: white; background: #3587f0; box-shadow: 0 7px 18px rgb(36 121 232 / 28%); font-size: 21px; transform: rotate(-45deg); }
+.map-meta { display: grid; grid-template-columns: 1fr auto; gap: 12px; font-size: 13px; }
+.map-meta span { color: var(--muted); }
+.map-meta strong { color: var(--navy); text-align: right; font-variant-numeric: tabular-nums; }
+.map-card > .button { width: 100%; }
+.map-card > .text-button { justify-content: center; }

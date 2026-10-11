@@ -1,0 +1,20 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #142b4e;
+  background: #f3f7fd;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --blue: #2479e8;
+  --blue-strong: #155fc1;
+  --navy: #10294f;
+  --muted: #667891;
+  --line: #dce7f5;
+  --green: #138a59;
+  --red: #e72f45;
+  --amber: #9a5c0b;
+  --surface: #fff;
+  --soft: #eaf3ff;
+  --radius-card: 24px;
+  --shadow-card: 0 8px 24px rgb(25 66 120 / 6%);
+}

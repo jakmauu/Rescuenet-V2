@@ -1,0 +1,41 @@
+.brand-row { display: flex; align-items: center; gap: 11px; min-height: 54px; }
+.brand-logo { width: 46px; height: 46px; object-fit: contain; border-radius: 14px; }
+.brand-copy { display: grid; gap: 3px; }
+.brand-copy strong { color: var(--navy); font-size: 18px; letter-spacing: -.35px; }
+.brand-copy span { color: #71819a; font-size: 10px; font-weight: 850; letter-spacing: 1.35px; }
+.status-pill { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; padding: 9px 12px; border-radius: 999px; font-size: 11px; font-weight: 780; white-space: nowrap; }
+.status-pill::before { width: 8px; height: 8px; border-radius: 50%; background: currentColor; content: ""; }
+.status-offline { color: var(--amber); background: #fff1dc; }
+.status-online { color: #087748; background: #e4f7ed; }
+.status-checking { color: #245a98; background: #e6f1ff; }
+.status-warning { color: #805000; background: #fff5d9; }
+.button { display: inline-flex; min-height: 50px; align-items: center; justify-content: center; border: 0; border-radius: 16px; padding: 0 18px; font-weight: 780; cursor: pointer; transition: transform .12s ease, opacity .12s ease; }
+.button:active:not(:disabled) { transform: scale(.985); }
+.button:disabled { cursor: not-allowed; opacity: .52; }
+.button-primary { color: white; background: linear-gradient(135deg, #398cf3, #1764d2); box-shadow: 0 8px 20px rgb(36 121 232 / 20%); }
+.button-secondary { color: #155bb2; background: #eaf3ff; }
+.text-button { display: inline-flex; min-height: 42px; align-items: center; padding: 5px 2px; border: 0; color: #1261c5; background: transparent; font-size: 13px; font-weight: 750; text-align: left; cursor: pointer; }
+.danger-text { color: #b42335; }
+.connection-card { display: grid; gap: 14px; }
+.connection-copy strong { display: block; color: var(--navy); font-size: 17px; }
+.connection-copy p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.connection-details { display: grid; grid-template-columns: minmax(115px, 1fr) 1.35fr; gap: 9px 12px; padding-top: 12px; border-top: 1px solid #edf1f7; font-size: 12px; }
+.connection-details span { color: var(--muted); }
+.connection-details strong { color: var(--navy); font-weight: 750; }
+.bottom-nav {
+  position: fixed; z-index: 4; right: 0; bottom: 0; left: 0; display: grid;
+  grid-template-columns: repeat(4, 1fr); padding: 8px max(12px, calc((100vw - 560px) / 2)) calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid #dce6f2; background: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.bottom-nav button { display: grid; min-height: 58px; place-content: center; justify-items: center; gap: 3px; border: 0; border-radius: 16px; color: #71819a; background: transparent; font-size: 11px; font-weight: 700; }
+.bottom-nav button span:first-child { font-size: 21px; line-height: 1; }
+.bottom-nav button[aria-current=page] { color: #1261c5; background: #eaf3ff; }
+.toast { position: fixed; z-index: 8; right: 14px; bottom: calc(88px + env(safe-area-inset-bottom)); left: 14px; width: min(480px, calc(100% - 28px)); margin: auto; padding: 13px 15px; border-radius: 14px; color: white; background: #17345a; box-shadow: 0 9px 25px rgb(16 40 76 / 24%); font-size: 13px; line-height: 1.45; opacity: 0; pointer-events: none; transform: translateY(9px); transition: opacity .18s, transform .18s; }
+.toast.visible { opacity: 1; transform: translateY(0); }
+.sos-history { display: grid; gap: 7px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf1f7; }
+.sos-history-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #52647c; font-size: 11px; }
+.sos-history-row .text-button { min-height: 36px; margin: 0; }
+.report-card h2, .status-card h2, .settings-card h2 { margin: 0 0 10px; color: var(--navy); font-size: 18px; }
+.consent-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 13px; color: #42536b; font-size: 13px; line-height: 1.5; }
+.consent-row input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; accent-color: var(--blue); }

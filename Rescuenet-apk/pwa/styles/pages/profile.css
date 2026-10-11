@@ -1,0 +1,6 @@
+.identity-editor summary, .network-card summary { color: var(--navy); font-weight: 780; cursor: pointer; }
+.identity-editor .button, .network-card .button, .settings-card .button { width: 100%; margin-top: 13px; }
+.identity-editor .text-button { width: 100%; margin-top: 8px; }
+.settings-card .consent-row + label { margin-top: 16px; }
+.network-card ol { color: #52647c; font-size: 13px; line-height: 1.55; }
+.network-card[open] summary, .identity-editor[open] summary { margin-bottom: 14px; }

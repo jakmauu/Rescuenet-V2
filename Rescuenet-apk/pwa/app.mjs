@@ -4,6 +4,15 @@ import {
   transmitLocation, transmitSos,
 } from './core.mjs';
 import { LocationScheduler } from './location-scheduler.mjs';
+import { renderConnectionCard } from './components/connection-card.mjs';
+import { renderAppHeader } from './components/app-header.mjs';
+import { bindBottomNav, renderBottomNav } from './components/bottom-nav.mjs';
+import { createToast } from './components/toast.mjs';
+import { bindOnboardingPage, renderOnboarding as renderOnboardingPage } from './pages/onboarding.mjs';
+import { bindHomePage, renderHome } from './pages/home.mjs';
+import { bindMapPage, renderMap as renderMapPage } from './pages/map.mjs';
+import { bindStatusPage, renderLocationStatus, renderSosStatus } from './pages/status.mjs';
+import { bindProfilePage, renderProfile as renderProfilePage } from './pages/profile.mjs';
 
 const KEY = {
   user: 'rn.pwa.user.v1', location: 'rn.pwa.location.v1', sos: 'rn.pwa.sos-events.v2',
@@ -63,10 +72,7 @@ function nodeUrl() {
   try { const parsed = new URL(normalizeNodeOrigin(raw)); return parsed.origin === location.origin ? '' : parsed.origin; }
   catch { return DEFAULT_NODE_URL; }
 }
-function toast(text) {
-  byId.toast.textContent = text; byId.toast.classList.add('visible'); clearTimeout(state.toastTimer);
-  state.toastTimer = setTimeout(() => byId.toast.classList.remove('visible'), 5200);
-}
+const toast = createToast(byId.toast);
 function meshText(info) {
   if (!info) return 'Belum diketahui';
   if (info.mesh_started !== true) return 'Mesh belum mulai';
@@ -95,29 +101,15 @@ function clearConnectionRetry() {
   state.connectionRetryTimer=null;state.connectionAttempts=0;
 }
 function renderConnection() {
-  const ready = state.nodeReady;
-  const reached = !!state.nodeDetails;
-  byId['connection-pill'].className = `status-pill ${state.checking ? 'status-checking' : reached ? 'status-online' : 'status-offline'}`;
-  byId['connection-pill'].textContent = state.checking ? 'Memeriksa…' : reached ? `Node ${state.nodeDetails.node_id}` : statusLabel();
-  const title = state.checking ? 'Memeriksa Field Node…' : reached ? `Terhubung ke Field Node ${state.nodeDetails.node_id}` : statusLabel();
-  const help = reached ? (ready ? 'API dapat diakses. Pengiriman ke Gateway dan petugas dikonfirmasi secara terpisah.'
-    : 'API dapat diakses, tetapi Field Node belum siap menerima kiriman. Coba lagi sebentar.')
-    : state.connectionError || 'Sambungkan ke Wi-Fi RescueNet, pilih tetap terhubung tanpa internet, lalu tekan Periksa koneksi.';
-  for (const [id, value] of [['connection-title',title],['home-connection-title',title],['connection-help',help],['home-connection-help',help],
-    ['api-state',reached?'Terhubung':statusLabel()],['home-api-state',reached?'Terhubung':statusLabel()],['mesh-state',meshText(state.nodeDetails)],['home-mesh-state',meshText(state.nodeDetails)],['status-api',reached?'Terhubung':statusLabel()],['status-mesh',meshText(state.nodeDetails)]]) {
-    if (byId[id]) byId[id].textContent = value;
-  }
-  for (const id of ['check-button','home-check-button']) if (byId[id]) { byId[id].disabled = state.checking; byId[id].textContent = state.checking ? 'Memeriksa…' : 'Periksa koneksi'; }
-  byId['sos-button'].disabled = state.sendingSosId !== null || !profile();
-  byId['sos-button-label'].textContent = state.sendingSosId ? 'MENGIRIM…' : ready ? 'KIRIM SOS' : 'SIMPAN SOS';
+  renderConnectionCard({ state, elements: byId, statusLabel, meshText });
+  renderAppHeader({ badge: byId['connection-pill'], state, connectionLabel: statusLabel() });
+  renderHome({ elements: byId, profile });
 }
 function showScreen(name) {
   state.screen = name;
   for (const [id, element] of Object.entries(screens)) element.hidden = id !== name;
   byId['bottom-nav'].hidden = name === 'onboarding' || name === 'splash';
-  document.querySelectorAll('.bottom-nav button').forEach(button => {
-    if (button.dataset.screen === name) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');
-  });
+  renderBottomNav(byId['bottom-nav'], name);
   if (name === 'map') renderMap();
   window.scrollTo?.({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
@@ -127,20 +119,7 @@ function openInitialScreen() {
   if (!profile() || safeStorage.read(KEY.onboarded) !== true) beginOnboarding(profile() ? 2 : 0);
   else showScreen('home');
 }
-function renderOnboarding() {
-  const step = state.onboardingStep;
-  const titles = ['Selamat datang di RescueNet','Daftarkan identitas','Hubungkan ke Field Node','Verifikasi koneksi','Aktifkan lokasi bila dibutuhkan'];
-  const copies = ['Komunikasi darurat, berbagi lokasi, dan SOS melalui jaringan RescueNet.','Nama dan peran membantu petugas memahami laporan. Identitas dibuat sekali di perangkat ini.','Hubungkan iPhone ke Wi-Fi Field Node agar PWA dapat mengirim laporan.','Pemeriksaan ini memverifikasi API lokal. Status mesh dan Gateway tidak disamakan dengan koneksi iPhone.','Lokasi hanya digunakan setelah izin dan persetujuan Anda. Sharing dapat dihentikan kapan saja.'];
-  byId['onboarding-step'].textContent = `LANGKAH ${step + 1} DARI 5`;
-  byId['onboarding-title'].textContent = titles[step]; byId['onboarding-copy'].textContent = copies[step];
-  for (const [id, show] of [['onboarding-form',step===1],['wifi-guide',step===2],['verify-guide',step===3],['permission-guide',step===4]]) byId[id].hidden = !show;
-  byId['onboarding-back'].hidden = step === 0;
-  byId['onboarding-skip'].hidden = ![2,3,4].includes(step);
-  byId['onboarding-next'].textContent = ['Mulai','Simpan & lanjut','Saya sudah terhubung','Lanjutkan','Selesai'][step];
-  byId['onboarding-next'].disabled = step === 3 && state.checking;
-  if (step === 1 && !profile()) { byId['name-input'].value = ''; }
-  if (step === 3) renderConnection();
-}
+function renderOnboarding() { renderOnboardingPage({ state, elements: byId, profile, renderConnection }); }
 async function advanceOnboarding() {
   const step = state.onboardingStep;
   if (step === 1) {
@@ -216,21 +195,7 @@ const scheduler = new LocationScheduler({
   },
 });
 
-function renderProfile() {
-  const current=profile();
-  if (current) {
-    byId['profile-name-input'].value=current.name||''; byId['profile-role-input'].value=current.role||'survivor'; byId['profile-team-input'].value=current.team||'';
-    byId['profile-summary'].textContent=`${current.name} · ${current.role==='rescuer'?'Tim Penyelamat':'Penyintas'}${current.team?` · ${current.team}`:''} · ID ${current.user_id}`;
-    byId['profile-edit-label'].textContent='Edit identitas';
-    byId['reset-profile-button'].hidden=false;
-    $('welcome-user').textContent=`Halo, ${current.name}. SOS dan lokasi hanya dikirim lewat Field Node yang terverifikasi.`;
-  } else {
-    byId['profile-name-input'].value=''; byId['profile-role-input'].value='survivor'; byId['profile-team-input'].value='';
-    byId['profile-summary'].textContent='Identitas belum didaftarkan di perangkat ini.';
-    byId['profile-edit-label'].textContent='Daftarkan identitas';
-    byId['reset-profile-button'].hidden=true;
-  }
-}
+function renderProfile() { renderProfilePage({ elements: byId, profile }); }
 function ageText(ms) { return !Number.isFinite(ms)?'—':ms<60_000?`${Math.floor(ms/1000)} dtk`:ms<3_600_000?`${Math.floor(ms/60_000)} mnt`:`${Math.floor(ms/3_600_000)} jam`; }
 function renderLocation() {
   const fix=state.fix; const age=locationAgeMs(fix); const recent=fix && age<=120_000;
@@ -248,38 +213,9 @@ function renderLocation() {
   renderLocationDelivery(p,accepted);
   if (state.screen==='map') renderMap();
 }
-function renderLocationDelivery(p,accepted) {
-  const label=p?.attempts>=5?'Gagal dikirim':p?'Menunggu dikirim':accepted?'Diterima Field Node':'Belum dikirim';
-  byId['location-delivery-status'].textContent=label;
-  byId['location-delivery-detail'].textContent=p?`${p.lastError ? `${p.lastError} ` : ''}Percobaan ${p.attempts}/${5}; server belum dikonfirmasi.`:accepted?`Diterima Node ${accepted.nodeId??'?'} pukul ${new Date(accepted.acceptedAt).toLocaleTimeString('id-ID')}. Server belum dikonfirmasi.`:'GPS lokal tidak berarti paket sudah dikirim.';
-}
-function renderMap() {
-  const fix=state.fix; const age=locationAgeMs(fix); const valid=fix&&age<=120_000&&Number.isFinite(fix.lat)&&Number.isFinite(fix.lon);
-  byId['map-coordinate-title'].textContent=valid?`${fix.lat.toFixed(6)}, ${fix.lon.toFixed(6)}`:'Belum ada fix GPS terbaru';
-  byId['map-coordinate-detail'].textContent=valid?'Posisi dari GPS perangkat; tidak dibagikan ke tile map.':'Aktifkan lokasi dan tunggu fix GPS.';
-  byId['map-accuracy'].textContent=valid&&fix.accuracy!=null?`±${Math.round(fix.accuracy)} m`:'Belum tersedia';
-  byId['map-time'].textContent=valid?new Date(fix.timestamp).toLocaleString('id-ID'):'Belum tersedia';
-  byId['map-age'].textContent=valid?ageText(age):'Kedaluwarsa / tidak tersedia';
-  byId['maps-link'].classList.toggle('hidden',!valid);
-  if(valid) byId['maps-link'].href=`https://maps.apple.com/?ll=${encodeURIComponent(`${fix.lat},${fix.lon}`)}`;
-}
-function renderSos() {
-  const current=activeSos();
-  if (!current) { byId['report-status'].textContent='Belum ada SOS aktif'; byId['report-detail'].textContent='Belum ada laporan SOS dari perangkat ini.'; byId['home-report-status'].textContent='Belum ada SOS aktif'; byId['home-report-detail'].textContent='Status pengiriman akan muncul di sini.'; byId['retry-button'].classList.add('hidden'); byId['sos-history'].replaceChildren(); return; }
-  const labels={QUEUED_LOCAL:'Menunggu dikirim',SENDING:'Sedang mengirim ke Field Node',FIELD_ACCEPTED:'Diterima Field Node',UNKNOWN:'Status belum pasti',FAILED:'Gagal dikirim'};
-  const detail=current.status==='FIELD_ACCEPTED'?`Field Node ${current.nodeId??'?'} mengakui antrean ${new Date(current.deliveredAt).toLocaleTimeString('id-ID')}. Gateway/server belum mengonfirmasi.`:current.error||`ID laporan ${current.id} disimpan lokal. Retry akan memakai ID yang sama.`;
-  byId['report-status'].textContent=labels[current.status]||'Status belum diketahui'; byId['report-detail'].textContent=detail;
-  byId['home-report-status'].textContent=labels[current.status]||'Status belum diketahui'; byId['home-report-detail'].textContent=detail;
-  byId['retry-button'].classList.toggle('hidden',!['QUEUED_LOCAL','FAILED','UNKNOWN'].includes(current.status));
-  byId['sos-history'].replaceChildren();
-  for(const event of [...state.events].reverse()) {
-    const row=document.createElement('div'); row.className='sos-history-row';
-    const copy=document.createElement('span'); copy.textContent=`${new Date(event.createdAt).toLocaleTimeString('id-ID')} · ${labels[event.status]||event.status} · ${event.id.slice(0,8)}`;
-    row.append(copy);
-    if(['QUEUED_LOCAL','FAILED','UNKNOWN'].includes(event.status)) { const retry=document.createElement('button'); retry.type='button'; retry.className='text-button'; retry.textContent='Coba lagi'; retry.addEventListener('click',()=>void retrySos(event.id)); row.append(retry); }
-    byId['sos-history'].append(row);
-  }
-}
+function renderLocationDelivery(p,accepted) { renderLocationStatus({ pending: p, accepted, canRetry: Boolean(p && state.tracking), elements: byId }); }
+function renderMap() { renderMapPage({ state, elements: byId, ageText, locationAgeMs }); }
+function renderSos() { renderSosStatus({ state, elements: byId, retrySos }); }
 function renderAll() { renderProfile(); renderConnection(); renderLocation(); renderSos(); }
 
 async function requestLocation() {
@@ -375,26 +311,24 @@ function saveNodeAddress() {
   catch(error){toast(error.message);}
 }
 
-for(const id of ['check-button','home-check-button'])byId[id]?.addEventListener('click',()=>void checkConnection());
-byId['sos-button'].addEventListener('click',()=>{if(!confirm('Kirim SOS sekarang? Jika GPS belum tersedia, SOS tetap dikirim tanpa koordinat.'))return;void sendSos();});
+byId['check-button'].addEventListener('click',()=>void checkConnection());
+bindHomePage({ elements: byId, checkConnection: () => void checkConnection(),
+  sendSos: () => { if(confirm('Kirim SOS sekarang? Jika GPS belum tersedia, SOS tetap dikirim tanpa koordinat.')) void sendSos(); },
+  showScreen, beginOnboarding });
 async function retrySos(eventId=null){if(!state.nodeReady&&!await checkConnection()){toast('Field Node belum siap. SOS tetap tersimpan lokal; coba lagi setelah terhubung.');return;}await sendSos({retry:true,eventId});}
-byId['retry-button'].addEventListener('click',()=>void retrySos());
-byId['new-sos-button'].addEventListener('click',()=>{showScreen('home');byId['sos-button'].focus();});
-byId['retry-location-button'].addEventListener('click',()=>scheduler.retryNow());
-byId['location-button'].addEventListener('click',()=>void requestLocation());
-byId['map-update-button'].addEventListener('click',()=>void requestLocation());
-byId['tracking-button'].addEventListener('click',toggleTracking);
-byId['location-consent'].addEventListener('change',()=>{state.consent=byId['location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan di perangkat; lokasi tidak dibagikan.');}if(!state.consent&&state.tracking)toggleTracking();else if(state.consent&&state.tracking)startTracking();renderLocation();});
+bindMapPage({ elements: byId, updateLocation: () => void requestLocation() });
+bindStatusPage({ elements: byId, retrySos: () => void retrySos(), retryLocation: () => scheduler.retryNow(),
+  newSos: () => { showScreen('home'); byId['sos-button'].focus(); } });
+bindProfilePage({ elements: byId, saveProfile, resetData: resetLocalData, saveNodeAddress,
+  requestLocation: () => void requestLocation(), toggleTracking,
+  onConsentChange: () => { state.consent=byId['location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan di perangkat; lokasi tidak dibagikan.');}if(!state.consent&&state.tracking)toggleTracking();else if(state.consent&&state.tracking)startTracking();renderLocation(); },
+  onIntervalChange: () => { const seconds=Number(byId['tracking-interval-input'].value);if(![30,60,120].includes(seconds)){byId['tracking-interval-input'].value='120';return;}safeStorage.write(KEY.interval,seconds);scheduler.intervalMs=seconds*1000;refreshStationaryTimer();toast(`Interval saat diam ${seconds} detik. Pengiriman tetap dibatasi jeda minimal 60 detik untuk menjaga kapasitas LoRa.`); } });
 byId['tracking-interval-input'].value=String(safeStorage.read(KEY.interval)||120);
-byId['tracking-interval-input'].addEventListener('change',()=>{const seconds=Number(byId['tracking-interval-input'].value);if(![30,60,120].includes(seconds)){byId['tracking-interval-input'].value='120';return;}safeStorage.write(KEY.interval,seconds);scheduler.intervalMs=seconds*1000;refreshStationaryTimer();toast(`Interval saat diam ${seconds} detik. Pengiriman tetap dibatasi jeda minimal 60 detik untuk menjaga kapasitas LoRa.`);});
-byId['save-name-button'].addEventListener('click',saveProfile);byId['reset-profile-button'].addEventListener('click',resetLocalData);byId['privacy-delete-button'].addEventListener('click',resetLocalData);byId['save-node-url-button'].addEventListener('click',saveNodeAddress);
-byId['home-map-button'].addEventListener('click',()=>showScreen('map'));byId['home-status-button'].addEventListener('click',()=>showScreen('status'));byId['home-wifi-button'].addEventListener('click',()=>beginOnboarding(2));
-document.querySelectorAll('.bottom-nav button').forEach(button=>button.addEventListener('click',()=>showScreen(button.dataset.screen)));
-byId['onboarding-next'].addEventListener('click',()=>void advanceOnboarding());
-byId['onboarding-back'].addEventListener('click',()=>{state.onboardingStep=Math.max(0,state.onboardingStep-1);renderOnboarding();});
-byId['onboarding-skip'].addEventListener('click',()=>{if(state.onboardingStep===2){state.onboardingStep=3;renderOnboarding();}else finishOnboarding();});
-byId['permission-button'].addEventListener('click',()=>void requestLocation());
-byId['onboarding-location-consent'].addEventListener('change',()=>{state.consent=byId['onboarding-location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['onboarding-location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan; lokasi tidak akan dibagikan.');}});
+bindBottomNav(byId['bottom-nav'], showScreen);
+bindOnboardingPage({ elements: byId, next: () => void advanceOnboarding(),
+  back: () => { state.onboardingStep=Math.max(0,state.onboardingStep-1);renderOnboarding(); },
+  skip: () => { if(state.onboardingStep===2){state.onboardingStep=3;renderOnboarding();}else finishOnboarding(); },
+  requestLocation: () => void requestLocation(), onConsentChange: () => { state.consent=byId['onboarding-location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['onboarding-location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan; lokasi tidak akan dibagikan.');} } });
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){void checkConnection();startTracking();scheduler.resume();}
   else{stopTracking();renderLocation();}
