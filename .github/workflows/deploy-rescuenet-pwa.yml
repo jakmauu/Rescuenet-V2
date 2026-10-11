@@ -35,6 +35,7 @@ jobs:
           mkdir -p _site/assets
           cp Rescuenet-apk/pwa/index.html Rescuenet-apk/pwa/app.mjs Rescuenet-apk/pwa/core.mjs Rescuenet-apk/pwa/location-scheduler.mjs Rescuenet-apk/pwa/styles.css Rescuenet-apk/pwa/manifest.webmanifest Rescuenet-apk/pwa/service-worker.js Rescuenet-apk/pwa/icon.svg _site/
           cp Rescuenet-apk/pwa/assets/rescuenet-logo.png _site/assets/
+          cp -a Rescuenet-apk/pwa/styles Rescuenet-apk/pwa/components Rescuenet-apk/pwa/pages _site/
           touch _site/.nojekyll
 
       - name: Upload Pages artifact
