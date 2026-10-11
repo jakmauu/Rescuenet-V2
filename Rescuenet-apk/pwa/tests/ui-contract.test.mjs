@@ -18,8 +18,20 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
   assert.match(app, /bindBottomNav\(byId\['bottom-nav'\], showScreen\)/);
   assert.match(html, /id="home-screen"[^>]*class="screen"[^>]*>/);
   assert.match(html, /id="splash-screen"[^>]*hidden/);
-  assert.ok(app.lastIndexOf('openInitialScreen();') < app.lastIndexOf('void checkConnection();'),
-    'the first screen must render before the network check starts');
+  const startup = app.slice(app.lastIndexOf('renderAll();'));
+  assert.match(startup, /openInitialScreen\(\);/);
+  assert.doesNotMatch(startup, /void checkConnection\(\)/,
+    'opening the app must not probe Field Node automatically');
+  assert.match(app, /byId\['check-button'\]\.addEventListener\('click',\(\)=>void checkConnection\(\)\)/,
+    'the connection check must remain available from its button');
+  const visibilityHandler = app.match(/document\.addEventListener\('visibilitychange',[\s\S]*?\n\}\);/)?.[0] || '';
+  const pageshowHandler = app.match(/window\.addEventListener\('pageshow',[\s\S]*?\}\);/)?.[0] || '';
+  assert.ok(visibilityHandler, 'visibility handler must remain present');
+  assert.ok(pageshowHandler, 'pageshow handler must remain present');
+  assert.doesNotMatch(visibilityHandler, /checkConnection/,
+    'returning to the app must not trigger a connection probe');
+  assert.doesNotMatch(pageshowHandler, /checkConnection/,
+    'pageshow must not trigger a connection probe');
   assert.match(files[3], /QUEUED_LOCAL: 'Menunggu dikirim'/);
   assert.match(files[3], /FIELD_ACCEPTED: 'Diterima Field Node'/);
   assert.match(files[2], /maps\.apple\.com/);

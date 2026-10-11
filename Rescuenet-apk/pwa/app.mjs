@@ -330,17 +330,16 @@ bindOnboardingPage({ elements: byId, next: () => void advanceOnboarding(),
   skip: () => { if(state.onboardingStep===2){state.onboardingStep=3;renderOnboarding();}else finishOnboarding(); },
   requestLocation: () => void requestLocation(), onConsentChange: () => { state.consent=byId['onboarding-location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['onboarding-location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan; lokasi tidak akan dibagikan.');} } });
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){void checkConnection();startTracking();scheduler.resume();}
+  if(document.visibilityState==='visible'){startTracking();scheduler.resume();}
   else{stopTracking();renderLocation();}
 });
 window.addEventListener('pagehide',()=>{stopTracking();clearTimeout(state.toastTimer);clearConnectionRetry();state.checkController?.abort();});
-window.addEventListener('pageshow',()=>{if(document.visibilityState==='visible'){void checkConnection();startTracking();}});
+window.addEventListener('pageshow',()=>{if(document.visibilityState==='visible')startTracking();});
 
 byId['node-url-input'].value=nodeUrl()||location.origin;
 byId['name-input'].value=profile()?.name||'';byId['role-input'].value=profile()?.role||'survivor';byId['team-input'].value=profile()?.team||'';
 if(state.events.at(-1)?.status==='SENDING'){state.events.at(-1).status='UNKNOWN';state.events.at(-1).error='Aplikasi ditutup sebelum ACK diterima. Retry memakai ID yang sama.';persistSosEvents();}
 renderAll();
 openInitialScreen();
-void checkConnection();
 if(state.tracking&&state.consent)startTracking();
 if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('./service-worker.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
