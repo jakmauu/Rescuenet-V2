@@ -188,7 +188,7 @@ const scheduler = new LocationScheduler({
   makePacket: fix => makeLocationPacket(profile(),fix,createRequestId()),
   send: packet => transmitLocation(packet,fetch,10_000,nodeUrl()),
   enabled: () => state.tracking && state.consent && state.nodeReady && document.visibilityState==='visible',
-  intervalMs: (Number(safeStorage.read(KEY.interval)) || 120) * 1000,
+  intervalMs: (Number(safeStorage.read(KEY.interval)) || 60) * 1000,
   minimumSpacingMs: 60_000,
   onState(kind,detail) {
     if (kind==='accepted') toast('Lokasi diterima Field Node. Server belum terkonfirmasi.');
@@ -264,7 +264,7 @@ function stopTracking({discard=false}={}) {
 function refreshStationaryTimer() {
   if(state.refreshTimer!==null)clearInterval(state.refreshTimer);
   if(!state.tracking||!state.consent||document.visibilityState!=='visible')return;
-  const seconds=[30,60,120].includes(Number(safeStorage.read(KEY.interval)))?Number(safeStorage.read(KEY.interval)):120;
+  const seconds=[30,60,120].includes(Number(safeStorage.read(KEY.interval)))?Number(safeStorage.read(KEY.interval)):60;
   state.refreshTimer=setInterval(async()=>{
     if(state.pollBusy||locationAgeMs(state.fix)<seconds*1000-2000)return;
     state.pollBusy=true;try{const fix=await getBrowserLocation();acceptFix({coords:{latitude:fix.lat,longitude:fix.lon,accuracy:fix.accuracy},timestamp:fix.timestamp});}
@@ -336,8 +336,8 @@ bindStatusPage({ elements: byId, retrySos: () => void retrySos(), retryLocation:
 bindProfilePage({ elements: byId, saveProfile, resetData: resetLocalData, saveNodeAddress,
   requestLocation: () => void requestLocation(), toggleTracking,
   onConsentChange: () => { state.consent=byId['location-consent'].checked;if(!safeStorage.write(KEY.consent,state.consent)){state.consent=false;byId['location-consent'].checked=false;toast('Persetujuan tidak dapat disimpan di perangkat; lokasi tidak dibagikan.');}if(!state.consent&&state.tracking)toggleTracking();else if(state.consent&&state.tracking)startTracking();renderLocation(); },
-  onIntervalChange: () => { const seconds=Number(byId['tracking-interval-input'].value);if(![30,60,120].includes(seconds)){byId['tracking-interval-input'].value='120';return;}safeStorage.write(KEY.interval,seconds);scheduler.intervalMs=seconds*1000;refreshStationaryTimer();toast(`Interval saat diam ${seconds} detik. Pengiriman tetap dibatasi jeda minimal 60 detik untuk menjaga kapasitas LoRa.`); } });
-byId['tracking-interval-input'].value=String(safeStorage.read(KEY.interval)||120);
+  onIntervalChange: () => { const seconds=Number(byId['tracking-interval-input'].value);if(![30,60,120].includes(seconds)){byId['tracking-interval-input'].value='60';return;}safeStorage.write(KEY.interval,seconds);scheduler.intervalMs=seconds*1000;refreshStationaryTimer();toast(`Interval saat diam ${seconds} detik. Pengiriman tetap dibatasi jeda minimal 60 detik untuk menjaga kapasitas LoRa.`); } });
+byId['tracking-interval-input'].value=String(safeStorage.read(KEY.interval)||60);
 bindBottomNav(byId['bottom-nav'], showScreen);
 bindOnboardingPage({ elements: byId, next: () => void advanceOnboarding(),
   back: () => { state.onboardingStep=Math.max(0,state.onboardingStep-1);renderOnboarding(); },

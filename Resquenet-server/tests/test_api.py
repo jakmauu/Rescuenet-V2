@@ -59,8 +59,40 @@ def test_root_and_local_static_assets_load(client):
     assert b"RescueNet Command Center" in root.data
     assert b"leaflet@1.9.4" in root.data
     assert b"Live Rescue Map" in root.data
+    assert b'id="dashboard-mobile-sos"' in root.data
+    assert b'id="reports-mobile-sos"' in root.data
     assert client.get("/static/css/style.css").status_code == 200
-    assert client.get("/static/js/app.js").status_code == 200
+    dashboard_js = client.get("/static/js/app.js")
+    assert dashboard_js.status_code == 200
+    assert b"/api/mobile/events?limit=100" in dashboard_js.data
+    assert b"INCIDENT_POLL_INTERVAL_MS = 2000" in dashboard_js.data
+    assert b"window.setInterval(refreshMapSnapshot, POLL_INTERVAL_MS)" in dashboard_js.data
+    assert b"SOS baru diterima server" in dashboard_js.data
+    assert b"SOS PWA baru tersimpan di server" in dashboard_js.data
+    reports_view = root.data.split(b'id="view-reports"', 1)[1].split(b'id="view-map"', 1)[0]
+    assert reports_view.index(b'id="reports-mobile-sos"') < reports_view.index(b'id="reports-table"')
+
+
+def test_mobile_sos_is_immediately_available_to_dashboard_api_without_cache(client, app):
+    event = {
+        "request_key": "a1" * 16, "event_type": "SOS", "user_key": "b2" * 8,
+        "name": "Relawan", "name_truncated": 0, "has_gps": 1,
+        "lat": -6.2, "lon": 106.8, "accuracy": 8.0,
+        "event_timestamp": 1_700_000_100, "fix_timestamp": 1_700_000_090,
+        "source_node": 2, "mesh_source": 9068, "mesh_hops": 1,
+        "rssi": None, "snr": None, "received_at": 1_700_000_101.0,
+    }
+    event_id, inserted = database.insert_mobile_event(event, app.config["DATABASE_PATH"])
+    assert inserted
+
+    response = client.get("/api/mobile/events?limit=100")
+
+    assert response.status_code == 200
+    assert "no-store" in response.headers["Cache-Control"]
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.get_json()[0]["id"] == event_id
+    assert response.get_json()[0]["request_key"] == event["request_key"]
+    assert response.get_json()[0]["event_type"] == "SOS"
 
 
 def test_map_positions_include_latest_field_and_mobile_locations(client, app):

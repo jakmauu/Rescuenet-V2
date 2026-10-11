@@ -48,10 +48,17 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
 });
 
 test('service worker caches the scheduler dependency and does not cache API responses', () => {
+  assert.match(worker, /CACHE_NAME = 'rescuenet-pwa-v14'/, 'location update changes must invalidate the previous shell cache');
   assert.match(worker, /location-scheduler\.mjs/);
   for (const asset of ['pages/onboarding.mjs','pages/home.mjs','pages/map.mjs','pages/status.mjs','pages/profile.mjs','components/app-header.mjs','styles/pages/profile.css']) assert.ok(worker.includes(asset), `offline cache missing ${asset}`);
   assert.ok(worker.includes('if (/\\/api(?:\\/|$)/.test(url.pathname))'));
   assert.match(worker, /fetch\(request\)/);
+});
+
+test('new installs default to one-minute foreground location updates without claiming background tracking', () => {
+  assert.match(app, /safeStorage\.read\(KEY\.interval\)\) \|\| 60/);
+  assert.match(app, /value=String\(safeStorage\.read\(KEY\.interval\)\|\|60\)/);
+  assert.match(html, /iOS dapat menjeda GPS saat PWA di latar belakang atau layar terkunci/);
 });
 
 test('node status checks use the saved node URL, HTTPS JSON, and bypass API cache', () => {

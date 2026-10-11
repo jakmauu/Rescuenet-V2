@@ -77,7 +77,7 @@
             <article class="panel span-2">
               <div class="panel-header"><div><h2>Mesh Network Status</h2><p>Last report activity from known field nodes</p></div><span class="legend-note">Exact relay path unavailable</span></div>
               <div class="compact-node-grid" id="dashboard-nodes"><div class="loading-state">Loading node activity…</div></div>
-              <p class="panel-footnote">Node activity is inferred from received reports; current firmware does not send heartbeat packets.</p>
+              <p class="panel-footnote">Report activity and device heartbeat are shown separately. “Unknown” means this node has not sent a heartbeat using the current firmware.</p>
             </article>
 
             <article class="panel gateway-panel">
@@ -113,12 +113,19 @@
               <div class="panel-header"><div><h2>Recent Emergency Reports</h2><p>Newest reports stored by the local server</p></div><button class="text-button" data-go-view="reports">View all <svg><use href="#i-chevron"/></svg></button></div>
               <div class="table-wrap" id="recent-reports"><div class="loading-state">Loading reports…</div></div>
             </article>
+
+            <article class="panel full-width">
+              <div class="panel-header"><div><h2>Recent SOS from PWA</h2><p>Mobile SOS records committed to this server database</p></div><span class="legend-note">Updates independently every 2 seconds</span></div>
+              <div id="dashboard-mobile-sos"><div class="loading-state">Checking for PWA SOS…</div></div>
+            </article>
           </div>
         </section>
 
         <section class="view" id="view-reports" data-view-panel="reports">
           <article class="panel">
             <div class="panel-header report-header"><div><h2>Emergency Reports</h2><p>Search, review, and update real incident reports</p></div><span class="record-count" id="report-count">0 records</span></div>
+            <div class="panel-header"><div><h2>Mobile SOS reports</h2><p>Only shown after the server durably stores the request</p></div><span class="legend-note">Live check every 2 seconds while this page is open</span></div>
+            <div id="reports-mobile-sos"><div class="loading-state">Checking for PWA SOS…</div></div>
             <div class="filters" aria-label="Report filters">
               <label class="search-field"><svg><use href="#i-search"/></svg><span class="sr-only">Search reports</span><input id="report-search" type="search" placeholder="Search packet, node, condition, or message"></label>
               <label><span class="sr-only">Condition</span><select id="condition-filter"><option value="">All conditions</option></select></label>

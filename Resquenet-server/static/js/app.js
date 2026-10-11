@@ -3,6 +3,7 @@
 
   const mapConfig = window.RESCUENET_MAP_CONFIG || {};
   const POLL_INTERVAL_MS = Number(mapConfig.pollIntervalMs) || 5000;
+  const INCIDENT_POLL_INTERVAL_MS = 2000;
   const liveMaps = new Map();
   const viewMeta = {
     dashboard: ["Dashboard", "Emergency response and mesh network overview"],
@@ -14,6 +15,7 @@
 
   const state = {
     reports: null,
+    mobileSos: null,
     nodes: null,
     stats: null,
     activity: null,
@@ -25,6 +27,8 @@
     sortDirection: "desc",
     currentReportId: null,
     refreshing: false,
+    mobileSosRefreshing: false,
+    mapRefreshing: false,
     toastTimer: null,
   };
 
@@ -118,6 +122,7 @@
   async function apiFetch(path, options = {}) {
     const response = await fetch(path, {
       headers: { Accept: "application/json", ...(options.headers || {}) },
+      cache: "no-store",
       ...options,
     });
     let body = null;
@@ -200,17 +205,24 @@
       : badge(node.no_data ? "No Activity" : "Not Recently Active");
   }
 
+  function deviceStatusBadge(node) {
+    const status = String(node.device_status || "unknown").toLowerCase();
+    const label = status === "online" ? "Device Online" : status === "stale" ? "Device Stale" : "Device Unknown";
+    return badge(label, status === "online" ? "success" : status === "stale" ? "warning" : "");
+  }
+
   function renderNodes() {
     if (!Array.isArray(state.nodes)) return;
     const nodes = displayNodes();
     byId("dashboard-nodes").innerHTML = nodes.slice(0, 6).map((node) => `
       <div class="compact-node">
-        <div class="compact-node-header"><strong>Node ${h(node.node_id)}</strong>${nodeStateBadge(node)}</div>
+        <div class="compact-node-header"><strong>Node ${h(node.node_id)}</strong><span>${nodeStateBadge(node)} ${deviceStatusBadge(node)}</span></div>
         <div class="node-meta">
           <div><span>Last seen</span><strong>${h(relativeTime(node.seconds_ago))}</strong></div>
           <div><span>Gateway RX RSSI</span><strong>${node.no_data ? "Not available" : display(node.last_rssi, " dBm")}</strong></div>
           <div><span>Gateway RX SNR</span><strong>${node.no_data ? "Not available" : numberDisplay(node.last_snr, 1, " dB")}</strong></div>
           <div><span>Hop / Packet</span><strong>${node.no_data ? "Not available" : `${h(node.last_hop)} / ${h(node.last_pkt_id)}`}</strong></div>
+          <div><span>Pending / Mesh</span><strong>${node.heartbeat_seconds_ago == null ? "Unknown" : `${h(node.pending_count ?? 0)} / ${node.mesh_synced ? "Synced" : "Unsynced"}`}</strong></div>
         </div>
       </div>`).join("");
 
@@ -222,7 +234,7 @@
 
     byId("node-detail-grid").innerHTML = nodes.map((node) => `
       <article class="node-detail-card">
-        <header><strong>Field Node ${h(node.node_id)}</strong>${nodeStateBadge(node)}</header>
+        <header><strong>Field Node ${h(node.node_id)}</strong><span>${nodeStateBadge(node)} ${deviceStatusBadge(node)}</span></header>
         <dl>
           <div><dt>Last seen</dt><dd>${h(relativeTime(node.seconds_ago))}</dd></div>
           <div><dt>Gateway RX RSSI</dt><dd>${node.no_data ? "Not available" : display(node.last_rssi, " dBm")}</dd></div>
@@ -230,6 +242,9 @@
           <div><dt>Hop count</dt><dd>${node.no_data ? "Not available" : display(node.last_hop)}</dd></div>
           <div><dt>Last packet ID</dt><dd>${node.no_data ? "Not available" : display(node.last_pkt_id)}</dd></div>
           <div><dt>Last activity</dt><dd>${node.no_data ? "Not available" : h(formatShortTime(node.last_seen))}</dd></div>
+          <div><dt>Last heartbeat</dt><dd>${node.heartbeat_seconds_ago == null ? "Unknown" : h(relativeTime(node.heartbeat_seconds_ago))}</dd></div>
+          <div><dt>Mesh / Gateway</dt><dd>${node.heartbeat_seconds_ago == null ? "Unknown" : `${node.mesh_synced ? "Synchronized" : "Unsynchronized"} / ${node.gateway_found ? "Found" : "Not found"}`}</dd></div>
+          <div><dt>Pending reports</dt><dd>${node.heartbeat_seconds_ago == null ? "Unknown" : display(node.pending_count)}</dd></div>
         </dl>
       </article>`).join("");
   }
@@ -328,6 +343,88 @@
     byId("report-count").textContent = `${reports.length} record${reports.length === 1 ? "" : "s"}`;
   }
 
+  function mobileSosHtml(events) {
+    if (state.mobileSos === null) return `<div class="loading-state">Checking for PWA SOS…</div>`;
+    if (!events.length) return `<div class="empty-state">No SOS from the PWA has reached the server yet.</div>`;
+    return `<div class="mobile-sos-list">${events.slice(0, 10).map((event) => `
+      <article class="mobile-sos-item">
+        <div class="mobile-sos-heading"><strong> SOS · Field Node ${h(event.source_node)}</strong>${badge("Stored on server", "success")}</div>
+        <p>${event.has_gps ? `GPS ${numberDisplay(event.lat, 6)}, ${numberDisplay(event.lon, 6)}` : "No GPS coordinates included"}</p>
+        <div class="mobile-sos-meta"><span>Server received ${h(formatTime(event.received_at))}</span><span>Mesh hops ${display(event.mesh_hops)}</span></div>
+        <small>Request ${h(String(event.request_key || "").slice(0, 8))}…</small>
+      </article>`).join("")}</div>`;
+  }
+
+  function renderMobileSos() {
+    if (state.mobileSos === null) return;
+    ["dashboard-mobile-sos", "reports-mobile-sos"].forEach((id) => {
+      const target = byId(id);
+      if (target) target.innerHTML = mobileSosHtml(state.mobileSos);
+    });
+  }
+
+  async function refreshIncidents() {
+    if (state.mobileSosRefreshing) return;
+    state.mobileSosRefreshing = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+    try {
+      const [reportsResult, eventsResult] = await Promise.allSettled([
+        apiFetch("/api/reports?limit=1000", { signal: controller.signal }),
+        apiFetch("/api/mobile/events?limit=100", { signal: controller.signal }),
+      ]);
+      let newSos = null;
+      if (reportsResult.status === "fulfilled" && Array.isArray(reportsResult.value)) {
+        const reportsWereLoaded = Array.isArray(state.reports);
+        const previousIds = new Set((state.reports || []).filter((report) => Number(report.sos) === 1).map((report) => String(report.id)));
+        state.reports = reportsResult.value;
+        renderReports();
+        if (reportsWereLoaded) {
+          newSos = reportsResult.value.find((report) => Number(report.sos) === 1 && !previousIds.has(String(report.id)));
+          if (newSos) showToast(`SOS baru diterima server dari Field Node ${newSos.src_id}.`);
+        }
+      } else if (state.reports === null) {
+        renderFailure(["reports-table", "recent-reports"], "Reports API unavailable.");
+      }
+      if (eventsResult.status === "fulfilled" && Array.isArray(eventsResult.value)) {
+        const mobileSosWasLoaded = Array.isArray(state.mobileSos);
+        const previousKeys = new Set((state.mobileSos || []).map((event) => String(event.request_key || "")));
+        state.mobileSos = eventsResult.value.filter((event) => event && event.event_type === "SOS");
+        renderMobileSos();
+        if (mobileSosWasLoaded) {
+          const newEvent = state.mobileSos.find((event) => !previousKeys.has(String(event.request_key || "")));
+          if (newEvent && !newSos) showToast(`SOS PWA baru tersimpan di server dari Field Node ${newEvent.source_node}.`);
+        }
+      } else if (state.mobileSos === null) {
+        ["dashboard-mobile-sos", "reports-mobile-sos"].forEach((id) => {
+          const target = byId(id);
+          if (target) target.innerHTML = `<div class="error-state">PWA SOS status is temporarily unavailable.</div>`;
+        });
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      state.mobileSosRefreshing = false;
+    }
+  }
+
+  async function refreshMapSnapshot() {
+    if (state.mapRefreshing) return;
+    state.mapRefreshing = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+    try {
+      const snapshot = await apiFetch("/api/map/positions", { signal: controller.signal });
+      if (!snapshot || !Array.isArray(snapshot.positions)) throw new Error("Invalid map response");
+      state.mapSnapshot = snapshot;
+      renderMaps();
+    } catch (_error) {
+      if (state.mapSnapshot === null) renderMapFailure("The local map API did not respond.");
+    } finally {
+      window.clearTimeout(timeout);
+      state.mapRefreshing = false;
+    }
+  }
+
   function setMapStatus(mapId, text, isError = false) {
     const status = byId(mapId === "dashboard-map" ? "dashboard-map-status" : "full-map-status");
     if (!status) return;
@@ -367,6 +464,9 @@
       rows.push(["Condition", display(position.condition)]);
     } else if (position.type === "mobile_user") {
       rows.push(["GPS accuracy", numberDisplay(position.accuracy, 1, " m")]);
+      rows.push(["GPS fix time", formatTime(position.fix_timestamp || position.updated_at)]);
+      rows.push(["Server received", formatTime(position.received_at)]);
+      rows.push(["User key", display(position.user_key)]);
       rows.push(["Via Field Node", display(position.source_node)]);
       rows.push(["Mesh hop", display(position.mesh_hops)]);
       if (position.distance_to_source_m != null) rows.push(["Distance to node", distanceDisplay(position.distance_to_source_m)]);
@@ -546,19 +646,21 @@
 
   async function refreshAll({ manual = false } = {}) {
     if (state.refreshing) return;
+    // Reports, PWA SOS, and map have independent polling loops so a slow
+    // system/chart endpoint cannot delay emergency visibility or GPS markers.
+    void refreshIncidents();
+    void refreshMapSnapshot();
     state.refreshing = true;
     const button = byId("refresh-button");
     button.classList.add("loading");
     button.disabled = true;
 
     const requests = [
-      ["reports", "/api/reports?limit=1000"],
       ["nodes", "/api/nodes"],
       ["stats", "/api/stats"],
       ["activity", "/api/activity?hours=6"],
       ["health", "/api/health"],
       ["system", "/api/system"],
-      ["mapSnapshot", "/api/map/positions"],
     ];
     const results = await Promise.allSettled(requests.map(([, path]) => apiFetch(path)));
     let successes = 0;
@@ -568,12 +670,10 @@
         state[key] = result.value;
         successes += 1;
       } else if (state[key] === null) {
-        if (key === "reports") renderFailure(["reports-table", "recent-reports"], "Reports API unavailable.");
         if (key === "nodes") renderFailure(["dashboard-nodes", "node-detail-grid"], "Node activity unavailable.");
         if (key === "activity") renderFailure(["dashboard-activity"], "Activity API unavailable.");
         if (key === "health") renderFailure(["gateway-summary", "service-grid"], "Service status unavailable.");
         if (key === "system") renderFailure(["metric-grid"], "System metrics unavailable.");
-        if (key === "mapSnapshot") renderMapFailure("The local map API did not respond.");
       }
     });
 
@@ -581,8 +681,6 @@
     renderStats();
     renderNodes();
     renderGateway();
-    renderReports();
-    renderMaps();
     renderActivity();
     renderSystem();
     if (manual) showToast(successes === requests.length ? "Command center data refreshed." : "Refresh completed with unavailable services.", successes === 0);
@@ -731,6 +829,10 @@
     if (viewMeta[hashView]) switchView(hashView);
     refreshAll();
     window.setInterval(refreshAll, POLL_INTERVAL_MS);
+    refreshIncidents();
+    window.setInterval(refreshIncidents, INCIDENT_POLL_INTERVAL_MS);
+    refreshMapSnapshot();
+    window.setInterval(refreshMapSnapshot, POLL_INTERVAL_MS);
   }
 
   document.addEventListener("DOMContentLoaded", initialize);

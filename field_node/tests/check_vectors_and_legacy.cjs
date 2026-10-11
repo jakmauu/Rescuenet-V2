@@ -66,7 +66,7 @@ function functionSlice(source, name) {
 // Radio TX/relay/setup intentionally change in 2C. Preserve GPS/PMU/UI and
 // portal handling where byte-for-byte comparison is still meaningful.
 const names = ['hasFreshNodeGps', 'getCsvField', 'parseGpsSentence', 'readNodeGps',
-  'getNodeLocation', 'initPMU', 'updateOLED', 'handleRoot'];
+  'getNodeLocation', 'initPMU', 'updateOLED'];
 for (const name of names) assert.equal(functionSlice(current, name), functionSlice(old, name), `legacy function unchanged: ${name}`);
 for (const define of ['LORA_FREQ', 'LORA_SF', 'LORA_BW', 'LORA_CR', 'LORA_SYNC_WORD', 'MAX_HOP']) {
   const regex = new RegExp(`^#define\\s+${define}\\s+[^\\n]+`, 'm');
@@ -74,9 +74,29 @@ for (const define of ['LORA_FREQ', 'LORA_SF', 'LORA_BW', 'LORA_CR', 'LORA_SYNC_W
   if (before) assert.equal(after?.[0], before[0], `radio constant ${define}`);
 }
 const portal = /const char PORTAL_HTML\[\] PROGMEM = R"rawliteral\([\s\S]*?\)rawliteral";/;
-assert.equal(current.match(portal)?.[0], old.match(portal)?.[0], 'legacy portal HTML unchanged');
+const portalHtml = current.match(portal)?.[0] ?? '';
+assert.match(portalHtml, /jaringan lokal tanpa internet/i, 'portal does not claim internet access');
+assert.match(portalHtml, /Tanpa Internet/i, 'portal tells iPhone how to remain connected');
+assert.match(portalHtml, /buka aplikasi RescueNet/i, 'portal returns the user to the installed PWA');
+assert(current.includes('server.sendHeader("Cache-Control", "no-store")'), 'captive portal response is not cached');
+assert(current.includes('IPAddress(192, 168, 4, 2)'), 'AP DHCP lease starts after the AP address');
+assert.match(current, /WiFi\.softAPConfig\([\s\S]{0,400}apIP\s*\/\/ Offer the local wildcard DNS server/, 'AP explicitly advertises local DNS to DHCP clients');
+for (const probe of ['/hotspot-detect.html', '/generate_204', '/connecttest.txt']) {
+  assert(current.includes(`server.on("${probe}"`), `HTTP connectivity probe serves the captive portal: ${probe}`);
+}
+assert(current.indexOf('const bool apReady = initWiFi();') < current.indexOf('mobileApi.beginHttps();'),
+  'AP/captive portal starts before the parallel HTTPS API');
+const secureApi = fs.readFileSync(path.join(root, 'field_node/MobileApi.h'), 'utf8');
+assert(secureApi.includes('MBEDTLS_ERR_SSL_CONN_EOF') && secureApi.includes('MBEDTLS_ERR_SSL_FATAL_ALERT_MESSAGE'),
+  'TLS diagnostics distinguish client EOF from a peer fatal alert');
+assert(secureApi.includes('heap_caps_get_largest_free_block') && secureApi.includes('heap_caps_get_minimum_free_size'),
+  'TLS diagnostics report largest and minimum internal heap separately');
 assert(!current.includes('#include <LoRa.h>'), 'old direct radio driver removed');
 assert(current.includes('meshTransport.enqueueLegacy(report)'), 'portal reports use mesh transport');
 assert(current.includes('Antrean jaringan penuh; coba kembali.'), 'portal reports failure instead of claiming delivery');
 assert(current.includes('SOS belum terkirim. Coba kembali.'), 'portal SOS failure is visible');
+const transport = fs.readFileSync(path.join(root, 'field_node/RescueNetMeshTransport.h'), 'utf8');
+assert(transport.includes("pending->kind == 'S' ? 15000U : 60000U"), 'mobile SOS retries faster than routine locations');
+const legacyQueue = fs.readFileSync(path.join(root, 'field_node/LegacyReportQueue.h'), 'utf8');
+assert(legacyQueue.includes('pending.sos ? 15000U : 60000U'), 'portal SOS retries faster than routine reports');
 console.log(`PASS ${process.argv.includes('--legacy-only') ? '' : `${vectors.length} cross-language vectors and `}${names.length} preserved legacy functions + portal and mesh migration`);

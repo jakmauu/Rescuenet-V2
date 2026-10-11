@@ -2,6 +2,7 @@
 #include "../MobileHttpHeaders.h"
 #include "../MobileJournal.h"
 #include "../RescueNetWire.h"
+#include "../LegacyReportQueue.h"
 #include <windows.h>
 #include <bcrypt.h>
 #include <iostream>
@@ -367,6 +368,70 @@ static void meshWireTests() {
   size = rnwire::encodeAck(ack, packet); rnwire::hexBytes(packet, size, hex);
   check(std::string(hex) == "524e41310100112233445566778899aabbccddeeff4e01", "STORED ACK golden bytes");
   rnwire::Ack decodedAck; check(rnwire::decodeAck(packet, size, decodedAck) && !memcmp(decodedAck.key, ack.key, 16), "ACK decode roundtrip");
+  rnwire::Heartbeat heartbeat{}; heartbeat.node = 2; heartbeat.meshSynced = true;
+  heartbeat.gatewayFound = true; heartbeat.uptimeSeconds = 120; heartbeat.pendingCount = 3;
+  size = rnwire::encodeHeartbeat(heartbeat, packet); rnwire::Heartbeat decodedHeartbeat;
+  check(size == 15 && rnwire::decodeHeartbeat(packet, size, decodedHeartbeat) &&
+        decodedHeartbeat.node == 2 && decodedHeartbeat.meshSynced && decodedHeartbeat.gatewayFound &&
+        decodedHeartbeat.uptimeSeconds == 120 && decodedHeartbeat.pendingCount == 3,
+        "RNH1 heartbeat roundtrip");
+  packet[6] |= 0x80; check(!rnwire::decodeHeartbeat(packet, size, decodedHeartbeat), "invalid heartbeat flags rejected");
+}
+static void legacyQueueTests() {
+  Preferences::reset(); rescue_legacy::ReportQueue queue;
+  check(queue.begin(2), "legacy journal begins in dedicated SOS partition");
+  rnwire::Legacy normal{}; normal.packetId = 8193; normal.node = 2; normal.flags = 1;
+  normal.count = 1; normal.latE6 = -6364821; normal.lonE6 = 106828913;
+  strcpy(normal.condition, "SEDANG"); strcpy(normal.message, "portal normal");
+  rnwire::Legacy sos = normal; sos.packetId = 8194; sos.flags = 3; strcpy(sos.condition, "KRITIS");
+  check(queue.enqueue(normal) && queue.enqueue(sos), "normal and SOS reports persist before mesh send");
+  check(queue.pendingNormal() == 1 && queue.pendingSos() == 1, "legacy queue reports stored counts");
+  rescue_legacy::Pending pending{};
+  check(queue.next(100, 0, 1, pending) && pending.sos, "SOS selected ahead of normal report");
+  queue.attempted(pending, true, 100);
+  check(!queue.next(101, 0, 1, pending), "one unconfirmed frame bounds in-flight queue");
+  check(!queue.next(15100, 10, 1, pending), "full mesh queue applies backpressure");
+  check(queue.next(15100, 2, 1, pending), "urgent SOS retries after a 15 second STORED-ACK wait");
+  check(pending.sos && queue.pendingSos() == 1, "retry retains SOS until STORED");
+  queue.attempted(pending, true, 15100);
+  rescue_legacy::ReportQueue rebooted;
+  check(rebooted.begin(2) && rebooted.pendingNormal() == 1 && rebooted.pendingSos() == 1,
+        "unconfirmed normal and SOS recover after restart");
+  check(rebooted.next(1, 0, 2, pending) && pending.sos, "recovered SOS remains priority");
+  uint8_t wrong[16]{};
+  check(!rebooted.confirm(wrong) && rebooted.pendingSos() == 1, "unknown ACK cannot remove durable SOS");
+  check(rebooted.confirm(pending.key) && rebooted.pendingSos() == 0, "valid STORED ACK removes only matching SOS");
+  rescue_legacy::ReportQueue afterAck;
+  check(afterAck.begin(2) && afterAck.pendingNormal() == 1 && afterAck.pendingSos() == 0,
+        "confirmed item remains removed after another restart");
+  check(Preferences::lastPartition == "rn_sos", "legacy reports use existing protected partition");
+
+  Preferences::reset(); rescue_legacy::ReportQueue priority;
+  check(priority.begin(2), "priority inversion fixture starts");
+  normal.packetId = 8200; normal.flags = 1; strcpy(normal.message, "already in flight");
+  check(priority.enqueue(normal) && priority.next(100, 0, 1, pending) && !pending.sos,
+        "normal portal report can occupy the mobile-location reserved slot");
+  priority.attempted(pending, true, 100);
+  sos.packetId = 8201; strcpy(sos.message, "urgent portal SOS");
+  check(priority.enqueue(sos), "urgent SOS commits while normal frame awaits server ACK");
+  check(!priority.next(101, 0, 1, pending), "old reserved limit reproduces portal SOS starvation");
+  check(priority.next(101, 0, 3, pending) && pending.sos,
+        "urgent captive-portal SOS bypasses the mobile-location reservation");
+  priority.attempted(pending, true, 101);
+  check(priority.next(15101, 0, 3, pending), "portal SOS fast retry is eligible after 15 seconds");
+
+  Preferences::reset(); rescue_legacy::ReportQueue full;
+  check(full.begin(2), "capacity fixture starts");
+  for (uint16_t i = 0; i < rescue_legacy::NORMAL_CAPACITY; ++i) {
+    normal.packetId = uint16_t(9000 + i); snprintf(normal.message, sizeof(normal.message), "normal-%u", unsigned(i));
+    check(full.enqueue(normal), "normal queue accepts within fixed capacity");
+  }
+  normal.packetId = 9100; strcpy(normal.message, "overflow");
+  check(!full.enqueue(normal) && full.pendingNormal() == rescue_legacy::NORMAL_CAPACITY,
+        "normal overflow is rejected without overwriting pending reports");
+  Preferences::data["ln0"][0] ^= 1;
+  rescue_legacy::ReportQueue corrupt;
+  check(!corrupt.begin(2) && Preferences::data.count("ln0"), "corrupt legacy journal fails closed without erasing evidence");
 }
 int main(int argc, char **argv) {
   try {
@@ -384,7 +449,7 @@ int main(int argc, char **argv) {
       }
       return 0;
     }
-    validationTests(); queueTests(); headerTests(); journalTests(); isolatedStorageTests(); storedAckCompletionTests(); meshWireTests(); fuzzTests();
+    validationTests(); queueTests(); headerTests(); journalTests(); isolatedStorageTests(); storedAckCompletionTests(); meshWireTests(); legacyQueueTests(); fuzzTests();
     std::cout << "PASS " << checks << " assertions; sizeof(Message)=" << sizeof(Message) << "; sizeof(MobileQueue)=" << sizeof(MobileQueue) << '\n';
     return 0;
   } catch (const std::exception &e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }
