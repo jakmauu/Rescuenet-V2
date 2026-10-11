@@ -29,15 +29,30 @@ export function nodeApiReadiness(data) {
     ? 'FIELD_CONNECTED' : 'FIELD_API_NOT_READY';
 }
 
-async function fetchWithTimeout(fetcher, url, options, timeoutMs) {
+async function fetchJsonWithTimeout(fetcher, url, options, timeoutMs) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new DOMException('Request timeout', 'TimeoutError')), timeoutMs);
   const externalSignal = options.signal;
-  const abortFromCaller = () => controller.abort(externalSignal.reason);
+  let timeout;
+  let rejectCaller;
+  const callerAbort = new Promise((_, reject) => { rejectCaller = reject; });
+  const abortFromCaller = () => {
+    controller.abort(externalSignal?.reason);
+    rejectCaller(new NodeApiError('Pemeriksaan koneksi dibatalkan.', 'CANCELLED'));
+  };
+  const timedOut = new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort(new DOMException('Request timeout', 'TimeoutError'));
+      reject(new NodeApiError('API Field Node belum membalas. Pastikan iPhone tetap tersambung ke Wi-Fi RescueNet, lalu coba lagi.', 'TIMEOUT'));
+    }, timeoutMs);
+  });
   if (externalSignal?.aborted) abortFromCaller();
   else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });
-  try { return await fetcher(url, { ...options, signal: controller.signal }); }
+  try {
+    const request = (async () => readJson(await fetcher(url, { ...options, signal: controller.signal })))();
+    return await Promise.race([request, timedOut, callerAbort]);
+  }
   catch (error) {
+    if (error instanceof NodeApiError) throw error;
     if (externalSignal?.aborted) throw new NodeApiError('Pemeriksaan koneksi dibatalkan.', 'CANCELLED');
     if (controller.signal.aborted) throw new NodeApiError('API Field Node belum membalas. Pastikan iPhone tetap tersambung ke Wi-Fi RescueNet, lalu coba lagi.', 'TIMEOUT');
     // Fetch intentionally exposes most TLS, captive-network, CORS, and offline
@@ -61,10 +76,9 @@ async function readJson(response) {
 function endpoint(baseUrl, path) { return `${baseUrl ?? NODE_URL}${path}`; }
 
 export async function probeNode(fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl = NODE_URL, signal = undefined) {
-  const response = await fetchWithTimeout(fetcher, endpoint(baseUrl, '/api/status'), {
+  const data = await fetchJsonWithTimeout(fetcher, endpoint(baseUrl, '/api/status'), {
     method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store', targetAddressSpace: 'local', signal,
   }, timeoutMs);
-  const data = await readJson(response);
   if (!verifyNodeStatus(data)) {
     throw new NodeApiError('Balasan API Field Node tidak sesuai dengan format RescueNet.', 'INCOMPATIBLE');
   }
@@ -162,12 +176,11 @@ export function isPendingLocationStale(packet, now = Date.now()) {
 }
 
 export async function transmitLocation(packet, fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl = NODE_URL) {
-  const response = await fetchWithTimeout(fetcher, endpoint(baseUrl, '/api/location'), {
+  const ack = await fetchJsonWithTimeout(fetcher, endpoint(baseUrl, '/api/location'), {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': packet.request_id },
     body: JSON.stringify(packet), cache: 'no-store', targetAddressSpace: 'local',
   }, timeoutMs);
-  const ack = await readJson(response);
   if (!verifySosAck(ack, packet.request_id)) throw new NodeApiError('Field Node belum mengonfirmasi lokasi terbaru.', 'ACK');
   return ack;
 }
@@ -179,12 +192,11 @@ export async function deliverLocation(packet, fetcher = fetch, timeoutMs = REQUE
 }
 
 export async function transmitSos(packet, fetcher = fetch, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl = NODE_URL) {
-  const response = await fetchWithTimeout(fetcher, endpoint(baseUrl, '/api/sos'), {
+  const ack = await fetchJsonWithTimeout(fetcher, endpoint(baseUrl, '/api/sos'), {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': packet.request_id },
     body: JSON.stringify(packet), cache: 'no-store', targetAddressSpace: 'local',
   }, timeoutMs);
-  const ack = await readJson(response);
   if (!verifySosAck(ack, packet.request_id)) {
     throw new NodeApiError('Field Node belum memberikan konfirmasi SOS yang valid. Pesan belum dinyatakan terkirim.', 'ACK');
   }

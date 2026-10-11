@@ -150,8 +150,8 @@ async function checkConnection() {
   }
   state.checking = true; state.connectionState='CHECKING'; state.connectionError='';
   const sequence = ++state.checkSequence; state.checkController?.abort(); state.checkController = new AbortController();
-  renderConnection(); renderOnboarding();
   try {
+    renderConnection(); renderOnboarding();
     const info = await probeNode(fetch, 10_000, nodeUrl(), state.checkController.signal);
     if (sequence !== state.checkSequence) return false;
     state.nodeDetails=info;

@@ -26,6 +26,12 @@ test('belum terhubung: probe menolak respons gagal, tidak membuat permintaan SOS
 test('status request mendukung timeout dan pembatalan oleh pemanggil', async () => {
   const never = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
   await assert.rejects(probeNode(never, 5), error => error.code === 'TIMEOUT');
+  const stalledBody = async () => ({
+    ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+    json: () => new Promise(() => {}),
+  });
+  await assert.rejects(probeNode(stalledBody, 5), error => error.code === 'TIMEOUT',
+    'timeout must cover JSON-body reading as well as waiting for response headers');
   const controller = new AbortController(); controller.abort();
   await assert.rejects(probeNode((_url,{signal})=>{if(signal.aborted)throw signal.reason;return response(status);}, 1000, 'https://192.168.4.1', controller.signal), error => error.code === 'CANCELLED');
 });
