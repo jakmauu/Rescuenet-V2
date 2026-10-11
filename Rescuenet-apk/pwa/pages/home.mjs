@@ -1,4 +1,10 @@
-export function renderHome({ elements, profile }) {
+export function renderHome({ elements, profile, state }) {
+  for (const id of ['welcome-user', 'sos-button', 'sos-button-label']) {
+    if (!elements[id]) throw new Error(`Elemen wajib Beranda tidak ditemukan: #${id}`);
+  }
+  if (!state || !Object.hasOwn(state, 'sendingSosId') || !Object.hasOwn(state, 'nodeReady')) {
+    throw new TypeError('renderHome memerlukan state.sendingSosId dan state.nodeReady.');
+  }
   const user = profile();
   elements['welcome-user'].textContent = user
     ? `Halo, ${user.name}. Tetap terhubung di lapangan, bahkan tanpa internet.`

@@ -25,6 +25,7 @@ const $ = id => document.getElementById(id);
 const byId = Object.fromEntries([
   'connection-pill','onboarding-screen','onboarding-step','onboarding-title','onboarding-copy','onboarding-form','wifi-guide','verify-guide','permission-guide','onboarding-consent','onboarding-location-consent','onboarding-next','onboarding-back','onboarding-skip','check-button','home-check-button','connection-title','connection-help','api-state','mesh-state','home-connection-title','home-connection-help','home-api-state','home-mesh-state','status-api','status-mesh','sos-button','sos-button-label','permission-button','permission-status','gps-status','home-gps-status','coordinates','home-coordinates','map-coordinate-title','map-coordinate-detail','map-accuracy','map-time','map-age','maps-link','location-button','tracking-button','tracking-status','tracking-badge','location-consent','report-status','report-detail','home-report-status','home-report-detail','retry-button','retry-location-button','new-sos-button','sos-history','name-input','role-input','team-input','profile-name-input','profile-role-input','profile-team-input','save-name-button','profile-summary','profile-edit-label','reset-profile-button','node-url-input','save-node-url-button','tracking-interval-input','toast','bottom-nav','privacy-delete-button','map-update-button','home-map-button','home-status-button','home-wifi-button','location-delivery-status','location-delivery-detail','onboarding-back','onboarding-skip'
 ].map(id => [id, $(id)]));
+byId['welcome-user'] = $('welcome-user');
 const screens = Object.fromEntries(['splash','onboarding','home','map','status','profile'].map(id => [id, $(`${id}-screen`)]));
 const safeStorage = {
   read(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } },
@@ -73,6 +74,13 @@ function nodeUrl() {
   catch { return DEFAULT_NODE_URL; }
 }
 const toast = createToast(byId.toast);
+function renderUiSafely(section, render) {
+  try { return render(); }
+  catch (error) {
+    console.error(`[RescueNet] Bagian ${section} gagal dirender.`, error);
+    return undefined;
+  }
+}
 function meshText(info) {
   if (!info) return 'Belum diketahui';
   if (info.mesh_started !== true) return 'Mesh belum mulai';
@@ -101,9 +109,9 @@ function clearConnectionRetry() {
   state.connectionRetryTimer=null;state.connectionAttempts=0;
 }
 function renderConnection() {
-  renderConnectionCard({ state, elements: byId, statusLabel, meshText });
-  renderAppHeader({ badge: byId['connection-pill'], state, connectionLabel: statusLabel() });
-  renderHome({ elements: byId, profile });
+  renderUiSafely('kartu koneksi', () => renderConnectionCard({ state, elements: byId, statusLabel, meshText }));
+  renderUiSafely('header', () => renderAppHeader({ badge: byId['connection-pill'], state, connectionLabel: statusLabel() }));
+  renderUiSafely('beranda', () => renderHome({ elements: byId, profile, state }));
 }
 function showScreen(name) {
   state.screen = name;
@@ -119,7 +127,7 @@ function openInitialScreen() {
   if (!profile() || safeStorage.read(KEY.onboarded) !== true) beginOnboarding(profile() ? 2 : 0);
   else showScreen('home');
 }
-function renderOnboarding() { renderOnboardingPage({ state, elements: byId, profile, renderConnection }); }
+function renderOnboarding() { renderUiSafely('onboarding', () => renderOnboardingPage({ state, elements: byId, profile, renderConnection })); }
 async function advanceOnboarding() {
   const step = state.onboardingStep;
   if (step === 1) {
@@ -195,9 +203,10 @@ const scheduler = new LocationScheduler({
   },
 });
 
-function renderProfile() { renderProfilePage({ elements: byId, profile }); }
+function renderProfile() { renderUiSafely('profil', () => renderProfilePage({ elements: byId, profile })); }
 function ageText(ms) { return !Number.isFinite(ms)?'—':ms<60_000?`${Math.floor(ms/1000)} dtk`:ms<3_600_000?`${Math.floor(ms/60_000)} mnt`:`${Math.floor(ms/3_600_000)} jam`; }
-function renderLocation() {
+function renderLocation() { renderUiSafely('lokasi', renderLocationView); }
+function renderLocationView() {
   const fix=state.fix; const age=locationAgeMs(fix); const recent=fix && age<=120_000;
   const coords=recent?`${Number(fix.lat).toFixed(6)}, ${Number(fix.lon).toFixed(6)}`:'Koordinat terbaru belum tersedia';
   const gps= !fix?'GPS belum diperiksa':recent?`Fix GPS · ±${fix.accuracy==null?'?':Math.round(fix.accuracy)} m · ${ageText(age)} lalu`:'Fix GPS sudah lama';
@@ -214,9 +223,14 @@ function renderLocation() {
   if (state.screen==='map') renderMap();
 }
 function renderLocationDelivery(p,accepted) { renderLocationStatus({ pending: p, accepted, canRetry: Boolean(p && state.tracking), elements: byId }); }
-function renderMap() { renderMapPage({ state, elements: byId, ageText, locationAgeMs }); }
-function renderSos() { renderSosStatus({ state, elements: byId, retrySos }); }
-function renderAll() { renderProfile(); renderConnection(); renderLocation(); renderSos(); }
+function renderMap() { return renderUiSafely('peta', () => renderMapPage({ state, elements: byId, ageText, locationAgeMs })); }
+function renderSos() { return renderUiSafely('status SOS', () => renderSosStatus({ state, elements: byId, retrySos })); }
+function renderAll() {
+  renderUiSafely('profil', renderProfile);
+  renderUiSafely('koneksi dan beranda', renderConnection);
+  renderUiSafely('lokasi', renderLocation);
+  renderUiSafely('status SOS', renderSos);
+}
 
 async function requestLocation() {
   if (!window.isSecureContext) { toast('GPS browser memerlukan HTTPS/konteks aman. HTTP AP lokal tidak otomatis menyediakan GPS.'); return null; }
